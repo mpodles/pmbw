@@ -7,3 +7,6 @@ plots-*.pdf
 stats.txt
 pmbw
 stats2gnuplot
+.ccls-cache/
+results/
+compile_commands.json

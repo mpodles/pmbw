@@ -123,6 +123,7 @@ struct Result
     size_t repeats;
     size_t testvol;
     size_t testaccess;
+    size_t memory_read;
     double time;
     double bandwidth;
     double rate;
@@ -218,6 +219,9 @@ bool Result::process_line_keyvalue(const std::string& key, const std::string& va
     }
     else if (key == "nthreads") {
         return parse_sizet(value, nthreads);
+    }
+    else if (key == "memory_read") {
+        return parse_sizet(value, memory_read);
     }
     else if (key == "areasize") {
         return parse_sizet(value, areasize);
@@ -418,6 +422,13 @@ void plot_data_bandwidth(std::ostream& datass, const Result& r)
            << r.bandwidth / 1024/1024/1024 << "\n";
 }
 
+void plot_memory_reads(std::ostream& datass, const Result& r)
+{
+    datass << std::setprecision(20)
+           << log(r.testsize) / log(2) << "\t"
+           << r.memory_read  << "\n";
+}
+
 /// plot the latency (access time) in nanoseconds for each Result
 void plot_data_latency(std::ostream& datass, const Result& r)
 {
@@ -462,6 +473,12 @@ void plot_sequential(std::ostream& os)
     P("set title '" << g_hostname << " - One Thread Memory Bandwidth (only 64-bit Reads)'");
     P("set ylabel 'Bandwidth [GiB/s]'");
     plot_funcname_iteration(os, filter_sequential_64bit_reads, plot_data_bandwidth);
+
+    P("set key top right");
+    P("set title '" << g_hostname << " - One Thread Memory Reads'");
+    P("set ylabel 'Memory reads [GiB/s]'");
+    P("set yrange [0:*]");
+    plot_funcname_iteration(os, filter_sequential, plot_memory_reads);
 }
 
 /// Plot procedure: iterate over results, filter them to show only one funcname
