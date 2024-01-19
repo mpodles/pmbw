@@ -42,6 +42,117 @@
 #include <pthread.h>
 #include <malloc.h>
 
+#include <stdint.h>
+#include <stdio.h>
+
+enum status {
+  SUCCESS,
+  ERROR_NOT_FOUND,
+  IO_FAILED,
+  INVALID_USE,
+  NO_MEMORY,
+  BAD_STATE
+};
+
+struct dpu_statistics
+{
+  uint64_t memory_read;
+  uint64_t memory_difference;
+};
+
+static struct dpu_statistics g_dpu_stats = {.memory_read = 0, .memory_difference=0};
+
+int
+read_file(char const *path, char **out_bytes, size_t *out_bytes_len)
+{
+	FILE *file;
+	char *bytes;
+
+	file = fopen(path, "rb");
+	if (file == NULL)
+		return ERROR_NOT_FOUND;
+
+	if (fseek(file, 0, SEEK_END) != 0) {
+		fclose(file);
+		return IO_FAILED;
+	}
+
+	long const nb_file_bytes = ftell(file);
+
+	if (nb_file_bytes == -1) {
+		fclose(file);
+		return IO_FAILED;
+	}
+
+	if (nb_file_bytes == 0) {
+		fclose(file);
+		return INVALID_USE;
+	}
+
+	bytes = (char *)malloc(nb_file_bytes);
+	if (bytes == NULL) {
+		fclose(file);
+		return NO_MEMORY;
+	}
+
+	if (fseek(file, 0, SEEK_SET) != 0) {
+		free(bytes);
+		fclose(file);
+		return IO_FAILED;
+	}
+
+	size_t const read_byte_count = fread(bytes, 1, nb_file_bytes, file);
+
+	fclose(file);
+
+	// if (read_byte_count != (size_t)nb_file_bytes) {
+	// 	free(bytes);
+	// 	return DOCA_ERROR_IO_FAILED;
+	// }
+
+	*out_bytes = bytes;
+	*out_bytes_len = read_byte_count;
+	return 0;
+}
+
+int
+open_file(char *fname, FILE **file)
+{
+    // char fname[100];
+    // sprintf(fname, "/tmp/build/stats%d", test_num);
+    *file = fopen(fname, "r");
+
+    if(*file == NULL)
+    {
+      return BAD_STATE;
+    }
+  return SUCCESS;
+}
+
+
+int
+read_hw_counters(const char *fname, uint64_t *counter)
+{
+  char *file_contents;
+  uint64_t file_len;
+  int result = read_file(fname, &file_contents, &file_len);
+  // Last byte is /n, replace it with string end for correct parsing
+  file_contents[file_len] = 0;
+  *counter = strtouq(file_contents, NULL, 0);
+  free(file_contents);
+
+  return result;
+}
+
+void
+read_memory(uint8_t tile)
+{
+  uint64_t memory_read;
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile0/counter1", &memory_read);
+  g_dpu_stats.memory_difference = memory_read - g_dpu_stats.memory_read;
+  g_dpu_stats.memory_read = memory_read;
+}
+
 #if ON_WINDOWS
 #include <windows.h>
 #endif
@@ -571,6 +682,7 @@ void* thread_master(void* cookie)
                     make_cyclic_permutation(thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize);
 
                 // *** Barrier ****
+                read_memory(0);
                 pthread_barrier_wait(&g_barrier);
                 double ts1 = timestamp();
 
@@ -579,6 +691,7 @@ void* thread_master(void* cookie)
                 // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
                 double ts2 = timestamp();
+                read_memory(0);
 
                 runtime = ts2 - ts1;
             }
@@ -619,6 +732,7 @@ void* thread_master(void* cookie)
                        << "repeats=" << g_repeats << '\t'
                        << "testvol=" << testvol << '\t'
                        << "testaccess=" << testaccess << '\t'
+                       << "memory_read=" << g_dpu_stats.memory_difference << '\t'
                        << "time=" << std::setprecision(20) << runtime << '\t'
                        << "bandwidth=" << testvol / runtime << '\t'
                        << "rate=" << runtime / testaccess;
