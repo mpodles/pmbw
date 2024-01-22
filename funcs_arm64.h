@@ -416,18 +416,74 @@ REGISTER(ScanRead64PtrUnrollLoop, 8, 8, 16);
 void cPermRead64SimpleLoop(char* memarea, size_t, size_t repeats)
 {
     uint64_t* begin = (uint64_t*)memarea;
-
+    uint64_t* p;
     do {
-        uint64_t* p = begin;
+        p = begin;
         do {
             p = (uint64_t*)*p;
         }
         while (p != begin);
     }
     while (--repeats != 0);
+    p++;
 }
 
-REGISTER_PERM(cPermRead64SimpleLoop, 4);
+REGISTER_PERM(cPermRead64SimpleLoop, 4, 1);
+
+// follow 64-bit permutation in a simple loop (C version)
+void cPermRead64SimpleLoop2Block(char* memarea, size_t, size_t repeats)
+{
+    uint64_t* begin = (uint64_t*)memarea;
+
+    uint64_t* p;
+    uint64_t* adj_1;
+    do {
+        p = begin;
+        adj_1 = begin + 1;
+        do {
+            p = (uint64_t*)*p;
+            adj_1 = (uint64_t*)*adj_1; 
+        }
+        while (p != begin);
+    }
+    while (--repeats != 0);
+    p++;
+    adj_1++;
+}
+
+REGISTER_PERM(cPermRead64SimpleLoop2Block, 4, 2);
+
+
+// follow 64-bit permutation in a simple loop (C version)
+void cPermRead64SimpleLoop4Block(char* memarea, size_t, size_t repeats)
+{
+    uint64_t* begin = (uint64_t*)memarea;
+
+    uint64_t* p;
+    uint64_t* adj_1;
+    uint64_t* adj_2;
+    uint64_t* adj_3;
+    do {
+        p = begin;
+        adj_1 = begin + 1;
+        adj_2 = begin + 2;
+        adj_3 = begin + 3;
+        do {
+            p = (uint64_t*)*p;
+            adj_1 = (uint64_t*)*adj_1; 
+            adj_2 = (uint64_t*)*adj_2; 
+            adj_3 = (uint64_t*)*adj_3; 
+        }
+        while (p != begin);
+    }
+    while (--repeats != 0);
+    p++;
+    adj_1++;
+    adj_2++;
+    adj_3++;
+}
+
+REGISTER_PERM(cPermRead64SimpleLoop4Block, 4, 4);
 
 // follow 64-bit permutation in a simple loop (Assembler version)
 void PermRead64SimpleLoop(char* memarea, size_t, size_t repeats)
@@ -448,7 +504,7 @@ void PermRead64SimpleLoop(char* memarea, size_t, size_t repeats)
         : "x0", "cc", "memory");
 }
 
-REGISTER_PERM(PermRead64SimpleLoop, 4);
+REGISTER_PERM(PermRead64SimpleLoop, 4, 1);
 
 // follow 64-bit permutation in an unrolled loop (Assembler version)
 void PermRead64UnrollLoop(char* memarea, size_t, size_t repeats)
@@ -487,6 +543,6 @@ void PermRead64UnrollLoop(char* memarea, size_t, size_t repeats)
         : "x0", "cc", "memory");
 }
 
-REGISTER_PERM(PermRead64UnrollLoop, 4);
+REGISTER_PERM(PermRead64UnrollLoop, 4, 1);
 
 // -----------------------------------------------------------------------------

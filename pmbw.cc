@@ -30,6 +30,7 @@
 #include <fstream>
 #include <iomanip>
 #include <vector>
+#include <algorithm>
 
 #include <stdlib.h>
 #include <inttypes.h>
@@ -145,7 +146,7 @@ read_hw_counters(const char *fname, uint64_t *counter)
 }
 
 void
-read_memory(uint8_t tile)
+update_memory_reads_counter(uint8_t tile)
 {
   uint64_t memory_read;
   read_hw_counters("/sys/class/hwmon/hwmon0/tile0/counter1", &memory_read);
@@ -230,13 +231,13 @@ struct TestFunction
     // number of accesses before and after
     unsigned int unroll_factor;
 
-    // fill the area with a permutation before calling the func
-    bool make_permutation;
+    // if 0 it's not a permutation, else, use blocks of sequential memory for each pointer
+   uint8_t  permutation_size;
 
     // constructor which also registers the function
     TestFunction(const char* n, testfunc_type f, const char* cf,
                  unsigned int bpa, unsigned int ao, unsigned int unr,
-                 bool mp);
+                 uint8_t ps);
 
     // test CPU feature support
     bool is_supported() const;
@@ -246,25 +247,28 @@ std::vector<TestFunction*> g_testlist;
 
 TestFunction::TestFunction(const char* n, testfunc_type f, const char* cf,
                            unsigned int bpa, unsigned int ao, unsigned int unr,
-                           bool mp)
+                           uint8_t ps)
     : name(n), func(f), cpufeat(cf),
       bytes_per_access(bpa), access_offset(ao), unroll_factor(unr),
-      make_permutation(mp)
+      permutation_size(ps)
 {
     g_testlist.push_back(this);
 }
 
-#define REGISTER(func, bytes, offset, unroll)                   \
+#define REGISTER(func, bytes_per_access, offset, unroll)                   \
     static const struct TestFunction* _##func##_register =       \
-        new TestFunction(#func,func,NULL,bytes,offset,unroll,false);
+        new TestFunction(#func,func,\
+            NULL,bytes_per_access,offset,unroll,false);
 
-#define REGISTER_CPUFEAT(func, cpufeat, bytes, offset, unroll)  \
+#define REGISTER_CPUFEAT(func, cpufeat, bytes_per_access, offset, unroll)  \
     static const struct TestFunction* _##func##_register =       \
-        new TestFunction(#func,func,cpufeat,bytes,offset,unroll,false);
+        new TestFunction(#func,func,\
+            cpufeat,bytes_per_access,offset,unroll,false);
 
-#define REGISTER_PERM(func, bytes)                              \
+#define REGISTER_PERM(func, bytes_per_access, perm_size)                              \
     static const struct TestFunction* _##func##_register =       \
-        new TestFunction(#func,func,NULL,bytes,bytes,1,true);
+        new TestFunction(#func,func, \
+            NULL,bytes_per_access,bytes_per_access,1,perm_size);
 
 // -----------------------------------------------------------------------------
 // --- Test Functions with Inline Assembler Loops
@@ -546,7 +550,7 @@ uint64_t g_thrsize_spaced;
 uint64_t g_repeats;
 
 // Create a one-cycle permutation of pointers in the memory area
-void make_cyclic_permutation(int thread_num, void* memarea, size_t bytesize)
+void make_cyclic_permutation(int thread_num, void* memarea, size_t bytesize, uint8_t permutation_size)
 {
     void** ptrarray = (void**)memarea;
     size_t size = bytesize / sizeof(void*);
@@ -568,10 +572,21 @@ void make_cyclic_permutation(int thread_num, void* memarea, size_t bytesize)
 
     LCGRandom srnd((size_t)ptrarray + 233349568);
 
-    for (size_t n = size; n > 1; --n)
+   
+    // Initial array, permutation size 2
+    // 0 1 2 3 4 5 6 7 8 9
+    // rand 10-2=8
+    // 0 1 8 9 4 5 6 7 2 3
+    // rand
+    // ...
+    // We assume that size%permutation_size  ==0
+    for (size_t n = size; n > permutation_size; n-=permutation_size)
     {
-        size_t i = srnd() % (n-1);      // permute pointers to one-cycle
-        std::swap( ptrarray[i], ptrarray[n-1] );
+        // Find an index smaller than the already permuted end of the table
+        size_t i = srnd() % (n-permutation_size);      
+        i -= i%permutation_size; // Align the index to the start of the permutation block
+        for(uint8_t j=0; j<permutation_size; ++j)
+          std::swap( ptrarray[i+j], ptrarray[n-permutation_size+j] );
     }
 
     if (gopt_testcycle)
@@ -678,11 +693,12 @@ void* thread_master(void* cookie)
                 assert(!g_done);
 
                 // create cyclic permutation for each thread
-                if (g_func->make_permutation)
-                    make_cyclic_permutation(thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize);
+                if (g_func->permutation_size>0)
+                    make_cyclic_permutation(
+                        thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_func->permutation_size);
 
                 // *** Barrier ****
-                read_memory(0);
+                update_memory_reads_counter(0);
                 pthread_barrier_wait(&g_barrier);
                 double ts1 = timestamp();
 
@@ -691,7 +707,7 @@ void* thread_master(void* cookie)
                 // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
                 double ts2 = timestamp();
-                read_memory(0);
+                update_memory_reads_counter(0);
 
                 runtime = ts2 - ts1;
             }
@@ -769,8 +785,9 @@ void* thread_worker(void* cookie)
         if (g_done) break;
 
         // create cyclic permutation for each thread
-        if (g_func->make_permutation)
-            make_cyclic_permutation(thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize);
+        if (g_func->permutation_size >0)
+            make_cyclic_permutation(
+                thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_func->permutation_size);
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
