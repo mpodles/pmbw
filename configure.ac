@@ -54,6 +54,12 @@ AC_CHECK_LIB(pthread, pthread_mutex_init,
   [AC_MSG_ERROR(pthread library needed!)]
 )
 
+# AM_CXXFLAGS = -W -Wall  -I/usr/include
+AC_CHECK_LIB(cap, cap_get_proc,
+  [LIBS="$LIBS -lcap"],
+  [AC_MSG_ERROR(libcap-dev library needed!)]
+)
+
 if [ ! "$ON_WINDOWS" ]; then
 
    AC_CHECK_LIB(rt, clock_gettime,
