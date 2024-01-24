@@ -106,7 +106,7 @@ CONFIG_CLEAN_FILES =
 CONFIG_CLEAN_VPATH_FILES =
 am__installdirs = "$(DESTDIR)$(bindir)"
 PROGRAMS = $(bin_PROGRAMS)
-am_pmbw_OBJECTS = pmbw.$(OBJEXT)
+am_pmbw_OBJECTS = pmbw.$(OBJEXT) perf.$(OBJEXT) utilities.$(OBJEXT)
 pmbw_OBJECTS = $(am_pmbw_OBJECTS)
 pmbw_LDADD = $(LDADD)
 am_stats2gnuplot_OBJECTS = stats2gnuplot.$(OBJEXT)
@@ -127,7 +127,8 @@ am__v_at_1 =
 DEFAULT_INCLUDES = -I.@am__isrc@
 depcomp = $(SHELL) $(top_srcdir)/acscripts/depcomp
 am__maybe_remake_depfiles = depfiles
-am__depfiles_remade = ./$(DEPDIR)/pmbw.Po ./$(DEPDIR)/stats2gnuplot.Po
+am__depfiles_remade = ./$(DEPDIR)/perf.Po ./$(DEPDIR)/pmbw.Po \
+	./$(DEPDIR)/stats2gnuplot.Po ./$(DEPDIR)/utilities.Po
 am__mv = mv -f
 CXXCOMPILE = $(CXX) $(DEFS) $(DEFAULT_INCLUDES) $(INCLUDES) \
 	$(AM_CPPFLAGS) $(CPPFLAGS) $(AM_CXXFLAGS) $(CXXFLAGS)
@@ -292,6 +293,7 @@ pdfdir = @pdfdir@
 prefix = @prefix@
 program_transform_name = @program_transform_name@
 psdir = @psdir@
+runstatedir = @runstatedir@
 sbindir = @sbindir@
 sharedstatedir = @sharedstatedir@
 srcdir = @srcdir@
@@ -304,9 +306,8 @@ target_vendor = @target_vendor@
 top_build_prefix = @top_build_prefix@
 top_builddir = @top_builddir@
 top_srcdir = @top_srcdir@
-pmbw_SOURCES = pmbw.cc funcs_x86_32.h funcs_x86_64.h funcs_arm.h
+pmbw_SOURCES = pmbw.cc funcs_x86_32.h funcs_x86_64.h funcs_arm.h  perf.cc perf.h utilities.cc utilities.h 
 stats2gnuplot_SOURCES = stats2gnuplot.cc
-AM_CXXFLAGS = -W -Wall
 all: all-am
 
 .SUFFIXES:
@@ -401,8 +402,10 @@ mostlyclean-compile:
 distclean-compile:
 	-rm -f *.tab.c
 
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/perf.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/pmbw.Po@am__quote@ # am--include-marker
 @AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/stats2gnuplot.Po@am__quote@ # am--include-marker
+@AMDEP_TRUE@@am__include@ @am__quote@./$(DEPDIR)/utilities.Po@am__quote@ # am--include-marker
 
 $(am__depfiles_remade):
 	@$(MKDIR_P) $(@D)
@@ -692,8 +695,10 @@ clean-am: clean-binPROGRAMS clean-generic mostlyclean-am
 
 distclean: distclean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
-		-rm -f ./$(DEPDIR)/pmbw.Po
+		-rm -f ./$(DEPDIR)/perf.Po
+	-rm -f ./$(DEPDIR)/pmbw.Po
 	-rm -f ./$(DEPDIR)/stats2gnuplot.Po
+	-rm -f ./$(DEPDIR)/utilities.Po
 	-rm -f Makefile
 distclean-am: clean-am distclean-compile distclean-generic \
 	distclean-tags
@@ -741,8 +746,10 @@ installcheck-am:
 maintainer-clean: maintainer-clean-am
 	-rm -f $(am__CONFIG_DISTCLEAN_FILES)
 	-rm -rf $(top_srcdir)/autom4te.cache
-		-rm -f ./$(DEPDIR)/pmbw.Po
+		-rm -f ./$(DEPDIR)/perf.Po
+	-rm -f ./$(DEPDIR)/pmbw.Po
 	-rm -f ./$(DEPDIR)/stats2gnuplot.Po
+	-rm -f ./$(DEPDIR)/utilities.Po
 	-rm -f Makefile
 maintainer-clean-am: distclean-am maintainer-clean-generic
 

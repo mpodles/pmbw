@@ -45,6 +45,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <utilities.h>
 
 enum status {
   SUCCESS,
@@ -60,6 +61,14 @@ struct dpu_statistics
   uint64_t memory_read;
   uint64_t memory_difference;
 };
+
+typedef struct {
+  uint64_t nr;
+  struct {
+    uint64_t value;
+    uint64_t id;
+  } values[1];
+} measurement_t;
 
 static struct dpu_statistics g_dpu_stats = {.memory_read = 0, .memory_difference=0};
 
@@ -132,11 +141,11 @@ open_file(char *fname, FILE **file)
 
 
 int
-read_hw_counters(const char *fname, uint64_t *counter)
+read_hw_counters(std::string fname, uint64_t *counter)
 {
   char *file_contents;
   uint64_t file_len;
-  int result = read_file(fname, &file_contents, &file_len);
+  int result = read_file(fname.c_str(), &file_contents, &file_len);
   // Last byte is /n, replace it with string end for correct parsing
   file_contents[file_len] = 0;
   *counter = strtouq(file_contents, NULL, 0);
@@ -144,12 +153,12 @@ read_hw_counters(const char *fname, uint64_t *counter)
 
   return result;
 }
-
 void
 update_memory_reads_counter(uint8_t tile)
 {
   uint64_t memory_read;
-  read_hw_counters("/sys/class/hwmon/hwmon0/tile0/counter1", &memory_read);
+  
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(tile) +"/counter1", &memory_read);
   g_dpu_stats.memory_difference = memory_read - g_dpu_stats.memory_read;
   g_dpu_stats.memory_read = memory_read;
 }
@@ -449,6 +458,12 @@ static inline bool match_funcfilter(const char* funcname)
     return false;
 }
 
+struct Results {} g_results;
+
+void write_results_to_file(Results results)
+{
+}
+
 // pin this thread to the core, where cores are numbered 0 .. n-1
 void pin_self_to_core(int core_id)
 {
@@ -625,6 +640,34 @@ void* thread_master(void* cookie)
 
     pin_self_to_core(thread_num);
 
+    // Read the number of instructions from the counter
+    measurement_t measurement = {};
+    // Create a measurement using hardware (CPU) registers. Measure the number of instructions amassed.
+    perf_measurement_t *measure_l1_cache_reads =
+                      perf_create_measurement(PERF_TYPE_HW_CACHE, 
+                                              (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
+                                              0,
+                                              -1);
+                                              
+
+    // Ensure that the caller has sufficient privilege for performing the measurement
+    int has_sufficient_privilege = perf_has_sufficient_privilege(measure_l1_cache_reads);
+    if (has_sufficient_privilege != 1) {
+      fprintf(stderr, "Insufficient privilege\n");
+      return NULL;
+    }
+
+    // Ensure that the event is supported
+    int is_supported = perf_event_is_supported(measure_l1_cache_reads);
+    if (is_supported != 1) {
+      fprintf(stderr, "Measuring hardware instructions is not supported\n");
+      return NULL;
+    }
+
+    // Open the measurement (register the measurement, but don't start measuring)
+    perf_open_measurement(measure_l1_cache_reads, -1, 0);
+
+
     // initial repeat factor is just an approximate B/s bandwidth
     uint64_t factor = 1024*1024*1024;
 
@@ -667,10 +710,20 @@ void* thread_master(void* cookie)
 
             g_repeats = (factor + g_thrsize-1) / g_thrsize;         // round up
 
-            // volume in bytes tested
+            // Those metrics are crucial for stats correctness
+            //
+            // benchmark goes through the whole memory * g_repeats times 
+            // if it's access offset (step) is larger or smaller than the amounts of bytes it reads then
+            // during one repetition less or more memory is read respectively
             uint64_t testvol = testsize * g_repeats * g_func->bytes_per_access / g_func->access_offset;
-            // number of accesses in test
+            // It's whole memory we covered devided by the number of steps taken during benchmark
+            // in permutation, the access_offset is set as equal to bytes_access
             uint64_t testaccess = testsize * g_repeats / g_func->access_offset;
+            // Sized permutation still accesses the same underlying memory and the same amount of times
+            // if(g_func->permutation_size) {
+            //   testvol *= g_func->permutation_size;
+            //   testaccess *= g_func->permutation_size;
+            // }
 
             ERR("Running"
                 << " nthreads=" << g_nthreads
@@ -699,6 +752,10 @@ void* thread_master(void* cookie)
 
                 // *** Barrier ****
                 update_memory_reads_counter(0);
+
+                // Reset the counter and start measuring
+                perf_start_measurement(measure_l1_cache_reads);
+
                 pthread_barrier_wait(&g_barrier);
                 double ts1 = timestamp();
 
@@ -708,6 +765,11 @@ void* thread_master(void* cookie)
                 pthread_barrier_wait(&g_barrier);
                 double ts2 = timestamp();
                 update_memory_reads_counter(0);
+
+                // Stop the counter
+                perf_stop_measurement(measure_l1_cache_reads);
+
+                perf_read_measurement(measure_l1_cache_reads, &measurement, sizeof(measurement_t));
 
                 runtime = ts2 - ts1;
             }
@@ -732,6 +794,7 @@ void* thread_master(void* cookie)
                 std::ostringstream result;
                 result << "RESULT\t";
 
+                // write_results_to_file(Results();
                 // output date, time and hostname to result line
                 char datetime[64];
                 time_t tnow = time(NULL);
@@ -748,7 +811,8 @@ void* thread_master(void* cookie)
                        << "repeats=" << g_repeats << '\t'
                        << "testvol=" << testvol << '\t'
                        << "testaccess=" << testaccess << '\t'
-                       << "memory_read=" << g_dpu_stats.memory_difference << '\t'
+                       << "memory_read=" << g_dpu_stats.memory_difference /runtime << '\t'
+                       << "l1_reads="<<  measurement.values[0].value<< '\t'
                        << "time=" << std::setprecision(20) << runtime << '\t'
                        << "bandwidth=" << testvol / runtime << '\t'
                        << "rate=" << runtime / testaccess;
@@ -765,7 +829,10 @@ void* thread_master(void* cookie)
 
     // *** Barrier ****
     pthread_barrier_wait(&g_barrier);
+    perf_close_measurement(measure_l1_cache_reads);
 
+    // Always free any allocated measurement
+    free((void *)measure_l1_cache_reads);
     return NULL;
 }
 
@@ -893,6 +960,7 @@ int main(int argc, char* argv[])
 {
     // *** parse command line options
 
+    std::cout <<"CPP version: "<<__cplusplus<<std::endl;
     int opt;
 
     while ( (opt = getopt(argc, argv, "hf:M:o:p:P:Qs:S:")) != -1 )

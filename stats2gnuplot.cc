@@ -86,8 +86,7 @@ static const char* funclist[] =
     "ScanRead32IndexSimpleLoop",
     "ScanRead32IndexUnrollLoop",
     "cScanWrite32PtrSimpleLoop",
-    "cScanWrite32IndexSimpleLoop",
-
+    "cScanWrite32IndexSimpleLoop", 
     "ScanWrite16PtrSimpleLoop",
     "ScanWrite16PtrUnrollLoop",
     "ScanRead16PtrSimpleLoop",
@@ -96,6 +95,9 @@ static const char* funclist[] =
     "PermRead64SimpleLoop",
     "PermRead64UnrollLoop",
     "cPermRead64SimpleLoop",
+    "cPermRead64SimpleLoop2Block",
+    "cPermRead64SimpleLoop4Block",
+    "cPermRead64SimpleLoop8Block",
 
     "PermRead32SimpleLoop",
     "PermRead32UnrollLoop",
@@ -124,6 +126,7 @@ struct Result
     size_t testvol;
     size_t testaccess;
     size_t memory_read;
+    // size_t memory_read;
     double time;
     double bandwidth;
     double rate;
@@ -476,7 +479,7 @@ void plot_sequential(std::ostream& os)
 
     P("set key top right");
     P("set title '" << g_hostname << " - One Thread Memory Reads'");
-    P("set ylabel 'Memory reads [GiB/s]'");
+    P("set ylabel 'Memory reads [reads/s]'");
     P("set yrange [0:*]");
     plot_funcname_iteration(os, filter_sequential, plot_memory_reads);
 }
