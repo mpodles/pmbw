@@ -18,7 +18,7 @@
  *
  * This program is distributed in the hope that it will be useful, but WITHOUT
  * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
- * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * FITNESS FOR A PARTICULAR PURPOSE.  Seethe GNU General Public License for
  * more details.
  *
  * You should have received a copy of the GNU General Public License along with
@@ -59,18 +59,186 @@ enum status {
 struct dpu_statistics
 {
   uint64_t memory_read;
-  uint64_t memory_difference;
+  uint64_t memory_write;
+  uint64_t reads_difference;
+  uint64_t writes_difference;
 };
 
+// This structure is returned each time the main measurement is read.
+// It contains the result of all the measurements, taken simultaneously.
+// The order of the measurements is unknown - used the ID.
 typedef struct {
-  uint64_t nr;
+  uint64_t recorded_values;
   struct {
     uint64_t value;
     uint64_t id;
-  } values[1];
+  } values[6];
 } measurement_t;
 
-static struct dpu_statistics g_dpu_stats = {.memory_read = 0, .memory_difference=0};
+// The main measuring group.
+perf_measurement_t *all_measurements;
+// Retired instructions. Be careful, these can be affected by various issues, most notably hardware interrupt counts.
+perf_measurement_t *measure_instruction_count;
+// Total cycles; not affected by CPU frequency scaling.
+perf_measurement_t *measure_cycle_count;
+// This counts context switches. Until Linux 2.6.34, these were all reported as user-space events, after that they are reported as happening in the kernel.
+perf_measurement_t *measure_context_switches;
+// This reports the CPU clock, a high-resolution per-CPU timer.
+// See also: https://stackoverflow.com/questions/23965363/linux-perf-events-cpu-clock-and-task-clock-what-is-the-difference.
+perf_measurement_t *measure_cpu_clock;
+// This counts the number of branch misses branch misses. Retired branch instructions.  Prior to Linux 2.6.35, this used the wrong event on AMD processors
+perf_measurement_t *measure_cpu_branches;
+
+perf_measurement_t *measure_l1_cache_reads;
+
+static int prepared_successfully = 0;
+
+// Call prepare before executing main
+void prepare() __attribute__((constructor));
+// Call cleanup before exiting
+void cleanup() __attribute__((destructor));
+
+void assert_support() {
+  // Print the kernel version
+  int major, minor, patch;
+  int status = perf_get_kernel_version(&major, &minor, &patch);
+  if (status < 0) {
+    perf_print_error(status);
+    exit(EXIT_FAILURE);
+  }
+
+  fprintf(stderr, "Kernel version: %d.%d.%d\n", major, minor, patch);
+
+  // Exit if the API is unsupported
+  status = perf_is_supported();
+  if (status < 0) {
+    perf_print_error(status);
+    exit(EXIT_FAILURE);
+  } else if (status == 0) {
+    fprintf(stderr, "error: perf not supported\n");
+    exit(EXIT_FAILURE);
+  }
+}
+
+void prepare_measurement(const char *description, perf_measurement_t *measurement, perf_measurement_t *parent_measurement) {
+  int status = perf_has_sufficient_privilege(measurement);
+  if (status < 0) {
+    perf_print_error(status);
+    exit(EXIT_FAILURE);
+  } else if (status == 0) {
+    fprintf(stderr, "error: unprivileged user\n");
+    exit(EXIT_FAILURE);
+  }
+
+  int support_status = perf_event_is_supported(measurement);
+  if (support_status < 0) {
+    perf_print_error(support_status);
+    exit(EXIT_FAILURE);
+  } else if (support_status == 0) {
+    fprintf(stderr, "warning: %s not supported\n", description);
+    return;
+  }
+
+  int group = parent_measurement == NULL ? -1 : parent_measurement->file_descriptor;
+
+  status = perf_open_measurement(measurement, group, 0);
+  if (status < 0) {
+    perf_print_error(status);
+    exit(EXIT_FAILURE);
+  }
+}
+
+void prepare() {
+  fprintf(stderr, "preparing harness\n");
+
+  // Fail if the perf API is unsupported
+  assert_support();
+
+  // Create a dummy measurement (measures nothing) to act as a group leader
+  all_measurements = perf_create_measurement(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_DUMMY, 0, -1);
+  prepare_measurement("software dummy counter", all_measurements, NULL);
+
+  // Measure the number of retired instructions
+  measure_instruction_count = perf_create_measurement(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS, 0, -1);
+  measure_instruction_count->attribute.exclude_kernel = 1;
+  prepare_measurement("hardware instruction counter", measure_instruction_count, all_measurements);
+
+  // Measure the number of CPU cycles (at least on Intel CPUs, see https://perf.wiki.kernel.org/index.php/Tutorial#Default_event:_cycle_counting)
+  measure_cycle_count = perf_create_measurement(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES, 0, -1);
+  measure_cycle_count->attribute.exclude_kernel = 1;
+  prepare_measurement("hardware cycles counter", measure_cycle_count, all_measurements);
+
+  // Measure the number of context switches
+  measure_context_switches = perf_create_measurement(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CONTEXT_SWITCHES, 0, -1);
+  prepare_measurement("software context switches counter", measure_context_switches, all_measurements);
+
+  // Measure the CPU clock related to the task (see https://stackoverflow.com/questions/23965363/linux-perf-events-cpu-clock-and-task-clock-what-is-the-difference)
+  measure_cpu_clock = perf_create_measurement(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK, 0, -1);
+  prepare_measurement("software task clock", measure_cpu_clock, all_measurements);
+
+  // Measure CPU branches
+  measure_cpu_branches = perf_create_measurement(PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES, 0, -1);
+  prepare_measurement("cpu branches counter", measure_cpu_branches, all_measurements);
+  // Create a measurement using hardware (CPU) registers. Measure the number of instructions amassed.
+  measure_l1_cache_reads = perf_create_measurement(PERF_TYPE_HW_CACHE, 
+                                            (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
+                                            0,
+                                            -1);
+  prepare_measurement("l1_cache_reads", measure_l1_cache_reads, all_measurements);
+  // Mark the preparation stage as successfuly
+  prepared_successfully = 1;
+}
+
+void cleanup() {
+  fprintf(stderr, "cleaning up harness\n");
+  if (all_measurements != NULL) {
+    perf_close_measurement(all_measurements);
+    free((void *)all_measurements);
+  }
+
+  if (measure_instruction_count != NULL) {
+    perf_close_measurement(measure_instruction_count);
+    free((void *)measure_instruction_count);
+  }
+
+  if (measure_cycle_count != NULL) {
+    perf_close_measurement(measure_cycle_count);
+    free((void *)measure_cycle_count);
+  }
+
+  if (measure_context_switches != NULL) {
+    perf_close_measurement(measure_context_switches);
+    free((void *)measure_context_switches);
+  }
+
+  if (measure_cpu_clock != NULL) {
+    perf_close_measurement(measure_cpu_clock);
+    free((void *)measure_cpu_clock);
+  }
+}
+
+void print_perf_measurements(std::ostringstream &result, measurement_t *measurement) {
+    uint64_t values[7] = {0};
+    perf_measurement_t *taken_measurements[] = {all_measurements, measure_instruction_count, measure_cycle_count, measure_context_switches, measure_cpu_clock, measure_cpu_branches, measure_l1_cache_reads};
+
+    for (uint64_t j = 0; j < measurement->recorded_values; j++) {
+      for (int k = 0; k < 7; k++) {
+        if (measurement->values[j].id == taken_measurements[k]->id) {
+          values[k] = measurement->values[j].value;
+          break;
+        }
+      }
+    }
+    // Ignore the results from the dummy counter
+    result<<" instructions="<<values[1]<< '\t'<<
+            " cycles=" <<values[2]<< '\t'<<
+            " context_switches=" <<values[3]<< '\t'<<
+            " clock=" <<values[4]<< '\t'<<
+            " cpu_branches=" <<values[5]<< '\t'<<
+            " l1_read_hit=" <<values[6];
+}
+
+static struct dpu_statistics g_dpu_stats = {.memory_read = 0, .reads_difference=0};
 
 int
 read_file(char const *path, char **out_bytes, size_t *out_bytes_len)
@@ -153,13 +321,16 @@ read_hw_counters(std::string fname, uint64_t *counter)
 
   return result;
 }
+
 void
-update_memory_reads_counter(uint8_t tile)
+update_dpu_counters(uint8_t tile)
 {
   uint64_t memory_read;
+  uint64_t memory_write;
   
-  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(tile) +"/counter1", &memory_read);
-  g_dpu_stats.memory_difference = memory_read - g_dpu_stats.memory_read;
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(tile) +"/counter0", &memory_read);
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(tile) +"/counter1", &memory_write);
+  g_dpu_stats.reads_difference = memory_read - g_dpu_stats.memory_read;
   g_dpu_stats.memory_read = memory_read;
 }
 
@@ -640,34 +811,22 @@ void* thread_master(void* cookie)
 
     pin_self_to_core(thread_num);
 
-    // Read the number of instructions from the counter
-    measurement_t measurement = {};
-    // Create a measurement using hardware (CPU) registers. Measure the number of instructions amassed.
-    perf_measurement_t *measure_l1_cache_reads =
-                      perf_create_measurement(PERF_TYPE_HW_CACHE, 
-                                              (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
-                                              0,
-                                              -1);
-                                              
-
-    // Ensure that the caller has sufficient privilege for performing the measurement
-    int has_sufficient_privilege = perf_has_sufficient_privilege(measure_l1_cache_reads);
-    if (has_sufficient_privilege != 1) {
-      fprintf(stderr, "Insufficient privilege\n");
-      return NULL;
-    }
-
+    // // Ensure that the caller has sufficient privilege for performing the measurement
+    // int has_sufficient_privilege = perf_has_sufficient_privilege(measure_l1_cache_reads);
+    // if (has_sufficient_privilege != 1) {
+    //   fprintf(stderr, "Insufficient privilege\n");
+    //   return NULL;
+    // }
+    //
     // Ensure that the event is supported
-    int is_supported = perf_event_is_supported(measure_l1_cache_reads);
-    if (is_supported != 1) {
-      fprintf(stderr, "Measuring hardware instructions is not supported\n");
-      return NULL;
-    }
-
+    // int is_supported = perf_event_is_supported(measure_l1_cache_reads);
+    // if (is_supported != 1) {
+    //   fprintf(stderr, "Measuring hardware instructions is not supported\n");
+    //   return NULL;
+    // }
+    measurement_t measurement;
     // Open the measurement (register the measurement, but don't start measuring)
-    perf_open_measurement(measure_l1_cache_reads, -1, 0);
-
-
+    // perf_open_measurement(measure_l1_cache_reads, -1, 0);
     // initial repeat factor is just an approximate B/s bandwidth
     uint64_t factor = 1024*1024*1024;
 
@@ -750,12 +909,12 @@ void* thread_master(void* cookie)
                     make_cyclic_permutation(
                         thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_func->permutation_size);
 
-                // *** Barrier ****
-                update_memory_reads_counter(0);
+                update_dpu_counters(thread_num/2);
 
                 // Reset the counter and start measuring
-                perf_start_measurement(measure_l1_cache_reads);
+                perf_start_measurement(all_measurements);
 
+                // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
                 double ts1 = timestamp();
 
@@ -763,13 +922,12 @@ void* thread_master(void* cookie)
 
                 // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
+
                 double ts2 = timestamp();
-                update_memory_reads_counter(0);
+                update_dpu_counters(thread_num/2);
 
-                // Stop the counter
-                perf_stop_measurement(measure_l1_cache_reads);
-
-                perf_read_measurement(measure_l1_cache_reads, &measurement, sizeof(measurement_t));
+                perf_stop_measurement(all_measurements);
+                perf_read_measurement(all_measurements, &measurement, sizeof(measurement_t));
 
                 runtime = ts2 - ts1;
             }
@@ -811,12 +969,13 @@ void* thread_master(void* cookie)
                        << "repeats=" << g_repeats << '\t'
                        << "testvol=" << testvol << '\t'
                        << "testaccess=" << testaccess << '\t'
-                       << "memory_read=" << g_dpu_stats.memory_difference /runtime << '\t'
-                       << "l1_reads="<<  measurement.values[0].value<< '\t'
+                       << "memory_read=" << g_dpu_stats.reads_difference << '\t'
+                       << "memory_writes=" << g_dpu_stats.writes_difference << '\t'
                        << "time=" << std::setprecision(20) << runtime << '\t'
                        << "bandwidth=" << testvol / runtime << '\t'
                        << "rate=" << runtime / testaccess;
 
+                print_perf_measurements(result, &measurement);
                 std::cout << result.str() << std::endl;
 
                 std::ofstream resultfile(gopt_output_file, std::ios::app);
