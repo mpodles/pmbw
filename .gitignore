@@ -8,5 +8,6 @@ stats.txt
 pmbw
 stats2gnuplot
 .ccls-cache/
+autom4te.cache/
 results/
 compile_commands.json
