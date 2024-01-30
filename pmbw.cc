@@ -653,11 +653,17 @@ void* thread_master(void* cookie)
                 runtime = ts2 - ts1;
             }
 
+                
+            // if the test was very short, it might have been optimized out by the compiler
+            // skip it
+            if( runtime < 0.001 ) continue;
+
             if ( runtime < g_min_time )
             {
                 // test ran for less than one second, repeat test and scale
                 // repeat factor
                 factor = g_thrsize * g_repeats * g_avg_time / runtime;
+
                 ERR("run time = " << runtime << " -> rerunning test with repeat factor=" << factor);
 
                 --round;     // redo this areasize

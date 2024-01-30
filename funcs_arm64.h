@@ -51,7 +51,7 @@ void cScanWrite32PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
     while (--repeats != 0);
 }
 
-REGISTER(cScanWrite32PtrSimpleLoop, 4, 4, 1);
+// REGISTER(cScanWrite32PtrSimpleLoop, 4, 4, 1);
 
 // 32-bit writer in a simple loop (Assembler version)
 void ScanWrite32PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
@@ -199,7 +199,7 @@ void cScanWrite32IndexSimpleLoop(char* _memarea, size_t _size, size_t repeats)
     while (--repeats != 0);
 }
 
-REGISTER(cScanWrite32IndexSimpleLoop, 4, 4, 1);
+// REGISTER(cScanWrite32IndexSimpleLoop, 4, 4, 1);
 
 // 32-bit writer in an indexed loop (Assembler version)
 void ScanWrite32IndexSimpleLoop(char* memarea, size_t size, size_t repeats)
@@ -274,7 +274,7 @@ void cScanWrite64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
     while (--repeats != 0);
 }
 
-REGISTER(cScanWrite64PtrSimpleLoop, 8, 8, 1);
+// REGISTER(cScanWrite64PtrSimpleLoop, 8, 8, 1);
 
 // 64-bit writer in a simple loop (Assembler version)
 void ScanWrite64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
