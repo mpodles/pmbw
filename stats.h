@@ -18,13 +18,14 @@ enum status {
   NO_MEMORY,
   BAD_STATE
 };
-struct dpu_statistics
-{
+
+#define THREADS_COUNT 8
+typedef struct { 
   uint64_t memory_read;
   uint64_t memory_write;
   uint64_t reads_difference;
   uint64_t writes_difference;
-};
+} dpu_statistics[THREADS_COUNT];
 
 // This structure is returned each time the main measurement is read.
 // It contains the result of all the measurements, taken simultaneously.
@@ -111,37 +112,12 @@ void prepare_measurement(const char *description, perf_measurement_t *measuremen
   }
 }
 
-void prepare() {
+void prepare_perf_measurements() {
   fprintf(stderr, "preparing harness\n");
 
   // Fail if the perf API is unsupported
   assert_support();
 
-  // Create a dummy measurement (measures nothing) to act as a group leader
-  // all_measurements = perf_create_measurement(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_DUMMY, 0, -1);
-  // prepare_measurement("software dummy counter", all_measurements, NULL);
-
-  // Measure the number of retired instructions
-  // measure_instruction_count = perf_create_measurement(PERF_TYPE_HARDWARE, PERF_COUNT_HW_INSTRUCTIONS, 0, -1);
-  // measure_instruction_count->attribute.exclude_kernel = 1;
-  // prepare_measurement("hardware instruction counter", measure_instruction_count, all_measurements);
-  //
-  // // Measure the number of CPU cycles (at least on Intel CPUs, see https://perf.wiki.kernel.org/index.php/Tutorial#Default_event:_cycle_counting)
-  // measure_cycle_count = perf_create_measurement(PERF_TYPE_HARDWARE, PERF_COUNT_HW_REF_CPU_CYCLES, 0, -1);
-  // measure_cycle_count->attribute.exclude_kernel = 1;
-  // prepare_measurement("hardware cycles counter", measure_cycle_count, all_measurements);
-  //
-  // // Measure the number of context switches
-  // measure_context_switches = perf_create_measurement(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_CONTEXT_SWITCHES, 0, -1);
-  // prepare_measurement("software context switches counter", measure_context_switches, all_measurements);
-  //
-  // // Measure the CPU clock related to the task (see https://stackoverflow.com/questions/23965363/linux-perf-events-cpu-clock-and-task-clock-what-is-the-difference)
-  // measure_cpu_clock = perf_create_measurement(PERF_TYPE_SOFTWARE, PERF_COUNT_SW_TASK_CLOCK, 0, -1);
-  // prepare_measurement("software task clock", measure_cpu_clock, all_measurements);
-  //
-  // // Measure CPU branches
-  // measure_cpu_branches = perf_create_measurement(PERF_TYPE_HARDWARE, PERF_COUNT_HW_BRANCH_MISSES, 0, -1);
-  // prepare_measurement("cpu branches counter", measure_cpu_branches, all_measurements);
   // Create a measurement using hardware (CPU) registers. Measure the number of instructions amassed.
   measure_l1_read_hit = perf_create_measurement(PERF_TYPE_HW_CACHE, 
                                             (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
@@ -153,6 +129,7 @@ void prepare() {
                                             (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
                                             0,
                                             -1);
+  // This might be the cause for overcounting the events, the l1 misses are bound to l1 read hits
   prepare_measurement("l1_read_miss", measure_l1_read_miss, measure_l1_read_hit);
   // Mark the preparation stage as successfuly
   prepared_successfully = 1;
@@ -196,6 +173,26 @@ void cleanup_perf() {
   }
 }
 
+static dpu_statistics g_dpu_stats = 
+ {
+    {0, 0,   0, 0},
+    {0, 0,   0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+    {0, 0,   0, 0},
+    {0, 0,   0, 0},
+    {0, 0, 0, 0},
+    {0, 0, 0, 0},
+};
+void print_dpu_measurements(std::ostringstream &result) {
+  for(uint8_t thr=0; thr<THREADS_COUNT; ++thr) {
+    result<<" \"thread"<<int(thr)<<"\":"<<" {";
+    result<< "\"memory_read\":\"" <<g_dpu_stats[thr].reads_difference << "\",\t"
+          << "\"memory_writes\":\"" << g_dpu_stats[thr].writes_difference << "\" \t";
+    result<<" },"<<'\t';
+  }
+}
+
 void print_perf_measurements(std::ostringstream &result, measurement_t *measurement) {
     uint64_t values[EVENTS_MEASURED] = {0};
     // perf_measurement_t *taken_measurements[] = {all_measurements, measure_instruction_count, measure_cycle_count, measure_context_switches, measure_cpu_clock, measure_cpu_branches, measure_l1_read_hit};
@@ -216,16 +213,15 @@ void print_perf_measurements(std::ostringstream &result, measurement_t *measurem
     //         " clock=" <<values[4]<< '\t'<<
     //         " cpu_branches=" <<values[5]<< '\t'<<
     //         " l1_read_hit=" <<values[6];
-    result<<" l1_read_hit="<<values[0]<< '\t'
-          <<" l1_read_miss="<<values[1]<< '\t';
+    result<<" \"l1_read_hit\":\""<<values[0]<< "\",\t"
+          <<" \"l1_read_miss\":\""<<values[1]<< "\",\t";
 }
-
-static struct dpu_statistics g_dpu_stats = {
-  .memory_read = 0,
-  .memory_write = 0,
-  .reads_difference=0,
-  .writes_difference=0,
-};
+//   .per_thread_stats = {}
+//   // .memory_read = 0,
+//   // .memory_write = 0,
+//   // .reads_difference=0,
+//   // .writes_difference=0,
+// };
 
 int
 read_file(char const *path, char **out_bytes, size_t *out_bytes_len)
@@ -310,16 +306,16 @@ read_hw_counters(std::string fname, uint64_t *counter)
 }
 
 void
-update_dpu_counters(uint8_t tile)
+update_dpu_counters(uint8_t thread_id)
 {
   uint64_t memory_read;
   uint64_t memory_write;
   
-  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(tile) +"/counter0", &memory_read);
-  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(tile) +"/counter1", &memory_write);
-  g_dpu_stats.reads_difference = memory_read - g_dpu_stats.memory_read;
-  g_dpu_stats.memory_read = memory_read;
-  g_dpu_stats.writes_difference = memory_write - g_dpu_stats.memory_write;
-  g_dpu_stats.memory_write = memory_write;
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter0", &memory_read);
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter1", &memory_write);
+  g_dpu_stats[thread_id].reads_difference = memory_read - g_dpu_stats[thread_id].memory_read;
+  g_dpu_stats[thread_id].memory_read = memory_read;
+  g_dpu_stats[thread_id].writes_difference = memory_write - g_dpu_stats[thread_id].memory_write;
+  g_dpu_stats[thread_id].memory_write = memory_write;
 }
 
