@@ -525,7 +525,7 @@ void* thread_master(void* cookie)
 
     pin_self_to_core(thread_num);
 
-    prepare();
+    prepare_perf_measurements();
     // measure_l1_cache_reads = perf_create_measurement(PERF_TYPE_HW_CACHE, 
     //                                           (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
     //                                           0,
@@ -628,15 +628,13 @@ void* thread_master(void* cookie)
                 if (g_func->permutation_size>0)
                     make_cyclic_permutation(
                         thread_num, g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_func->permutation_size);
-
-                update_dpu_counters(thread_num/2);
-
-                // Reset the counter and start measuring
-                perf_start_measurement(measure_l1_read_hit);
-                // perf_start_measurement(measure_l1_cache_reads);
-
                 // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
+
+                // Reset the counter and start measuring
+                update_dpu_counters(thread_num);
+                perf_start_measurement(measure_l1_read_hit);
+
                 double ts1 = timestamp();
 
                 g_func->func(g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_repeats);
@@ -645,7 +643,8 @@ void* thread_master(void* cookie)
                 pthread_barrier_wait(&g_barrier);
 
                 double ts2 = timestamp();
-                update_dpu_counters(thread_num/2);
+
+                update_dpu_counters(thread_num);
 
                 perf_stop_measurement(measure_l1_read_hit);
                 perf_read_measurement(measure_l1_read_hit, &measurement, sizeof(measurement_t));
@@ -685,24 +684,25 @@ void* thread_master(void* cookie)
                 time_t tnow = time(NULL);
 
                 strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", localtime(&tnow));
-                result << "datetime=" << datetime << '\t'
-                       << "host=" << g_hostname << '\t'
-                       << "version=" << PACKAGE_VERSION << '\t'
-                       << "funcname=" << g_func->name << '\t'
-                       << "nthreads=" << g_nthreads << '\t'
-                       << "areasize=" << *areasize << '\t'
-                       << "threadsize=" << g_thrsize << '\t'
-                       << "testsize=" << testsize << '\t'
-                       << "repeats=" << g_repeats << '\t'
-                       << "testvol=" << testvol << '\t'
-                       << "testaccess=" << testaccess << '\t'
-                       << "memory_read=" << g_dpu_stats.reads_difference << '\t'
-                       << "memory_writes=" << g_dpu_stats.writes_difference << '\t'
-                       << "time=" << std::setprecision(20) << runtime << '\t'
-                       << "bandwidth=" << testvol / runtime << '\t'
-                       << "rate=" << runtime / testaccess;
+                result << "{" << datetime << '\t';
+                result << "\"datetime\": \"" << datetime << "\", \t"
+                       << "\"host\": \"" << g_hostname << "\", \t"
+                       << "\"version\": \"" << PACKAGE_VERSION << "\", \t"
+                       << "\"funcname\": \"" << g_func->name << "\", \t"
+                       << "\"nthreads\": \"" << g_nthreads << "\", \t"
+                       << "\"areasize\": \"" << *areasize << "\", \t"
+                       << "\"threadsize\": \"" << g_thrsize << "\", \t"
+                       << "\"testsize\": \"" << testsize << "\", \t"
+                       << "\"repeats\": \"" << g_repeats << "\", \t"
+                       << "\"testvol\": \"" << testvol << "\", \t"
+                       << "\"testaccess\": \"" << testaccess << "\", \t"
+                       << "\"time\": \"" << std::setprecision(20) << runtime << "\", \t"
+                       << "\"bandwidth\": \"" << testvol / runtime << "\", \t"
+                       << "\"rate\": \"" << runtime / testaccess;
 
+                print_dpu_measurements(result);
                 print_perf_measurements(result, &measurement);
+                result << "}";
                 std::cout << result.str() << std::endl;
 
                 std::ofstream resultfile(gopt_output_file, std::ios::app);
@@ -741,17 +741,19 @@ void* thread_worker(void* cookie)
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
+        update_dpu_counters(thread_num);
 
         g_func->func(g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_repeats);
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
+        update_dpu_counters(thread_num);
     }
 
     return NULL;
 }
 
-void testfunc(const TestFunction* func)
+void run_func_by_threads(const TestFunction* func)
 {
     if (!match_funcfilter(func->name)) {
         ERR("Skipping " << func->name << " tests");
@@ -1026,7 +1028,7 @@ int main(int argc, char* argv[])
             continue;
         }
 
-        testfunc(tf);
+        run_func_by_threads(tf);
     }
 
     // cleanup
