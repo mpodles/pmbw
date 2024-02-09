@@ -526,28 +526,8 @@ void* thread_master(void* cookie)
     pin_self_to_core(thread_num);
 
     prepare_perf_measurements();
-    // measure_l1_cache_reads = perf_create_measurement(PERF_TYPE_HW_CACHE, 
-    //                                           (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
-    //                                           0,
-    //                                           -1);
-    // prepare_measurement("l1_cache_reads", measure_l1_cache_reads, NULL);
-    // // Ensure that the caller has sufficient privilege for performing the measurement
-    // int has_sufficient_privilege = perf_has_sufficient_privilege(measure_l1_cache_reads);
-    // if (has_sufficient_privilege != 1) {
-    //   fprintf(stderr, "Insufficient privilege\n");
-    //   return NULL;
-    // }
-    //
-    // Ensure that the event is supported
-    // int is_supported = perf_event_is_supported(measure_l1_cache_reads);
-    // if (is_supported != 1) {
-    //   fprintf(stderr, "Measuring hardware instructions is not supported\n");
-    //   return NULL;
-    // }
     measurement_t measurement;
-    // Open the measurement (register the measurement, but don't start measuring)
-    // perf_open_measurement(measure_l1_cache_reads, -1, 0);
-    // initial repeat factor is just an approximate B/s bandwidth
+
     uint64_t factor = 1024*1024*1024;
 
     for (const uint64_t* areasize = areasize_list; *areasize; ++areasize)
@@ -563,7 +543,7 @@ void* thread_master(void* cookie)
             continue;
         }
 
-        for (unsigned int round = 0; round < 1; ++round)
+        for (unsigned int round = 0; round < 4; ++round)
         {
             // divide area by thread number
             g_thrsize = *areasize / g_nthreads;
@@ -676,7 +656,7 @@ void* thread_master(void* cookie)
                 ERR("run time = " << runtime << " -> next test with repeat factor=" << factor);
 
                 std::ostringstream result;
-                result << "RESULT\t";
+                // result << "RESULT\t";
 
                 // write_results_to_file(Results();
                 // output date, time and hostname to result line
@@ -684,7 +664,7 @@ void* thread_master(void* cookie)
                 time_t tnow = time(NULL);
 
                 strftime(datetime, sizeof(datetime), "%Y-%m-%d %H:%M:%S", localtime(&tnow));
-                result << "{" << datetime << '\t';
+                result << "{" ; //<< datetime << '\t';
                 result << "\"datetime\": \"" << datetime << "\", \t"
                        << "\"host\": \"" << g_hostname << "\", \t"
                        << "\"version\": \"" << PACKAGE_VERSION << "\", \t"
@@ -698,7 +678,7 @@ void* thread_master(void* cookie)
                        << "\"testaccess\": \"" << testaccess << "\", \t"
                        << "\"time\": \"" << std::setprecision(20) << runtime << "\", \t"
                        << "\"bandwidth\": \"" << testvol / runtime << "\", \t"
-                       << "\"rate\": \"" << runtime / testaccess;
+                       << "\"rate\": \"" << runtime / testaccess<< "\", \t";
 
                 print_dpu_measurements(result);
                 print_perf_measurements(result, &measurement);
@@ -848,6 +828,18 @@ int main(int argc, char* argv[])
     std::cout <<"CPP version: "<<__cplusplus<<std::endl;
     int opt;
 
+    for(int i = 0; i<THREADS_COUNT;++i){
+      g_dpu_stats[i].memory_reads= 0;
+      g_dpu_stats[i].memory_writes= 0;
+      g_dpu_stats[i].l3_half0_bank0_hit= 0;
+      g_dpu_stats[i].l3_half0_bank1_hit= 0;
+      g_dpu_stats[i].l3_half0_bank0_miss= 0;
+      g_dpu_stats[i].l3_half0_bank1_miss= 0;
+      g_dpu_stats[i].l3_half1_bank0_hit= 0;
+      g_dpu_stats[i].l3_half1_bank1_hit= 0;
+      g_dpu_stats[i].l3_half1_bank0_miss= 0;
+      g_dpu_stats[i].l3_half1_bank1_miss= 0;
+    }
     while ( (opt = getopt(argc, argv, "hf:M:o:p:P:Qs:S:")) != -1 )
     {
         switch (opt) {

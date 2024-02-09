@@ -21,10 +21,19 @@ enum status {
 
 #define THREADS_COUNT 8
 typedef struct { 
-  uint64_t memory_read;
-  uint64_t memory_write;
-  uint64_t reads_difference;
-  uint64_t writes_difference;
+  uint64_t memory_reads;
+  uint64_t memory_writes;
+
+  uint64_t l3_half0_bank0_hit;
+  uint64_t l3_half1_bank0_hit;
+  uint64_t l3_half0_bank1_hit;
+  uint64_t l3_half1_bank1_hit;
+
+  uint64_t l3_half0_bank0_miss;
+  uint64_t l3_half1_bank0_miss;
+  uint64_t l3_half0_bank1_miss;
+  uint64_t l3_half1_bank1_miss;
+
 } dpu_statistics[THREADS_COUNT];
 
 // This structure is returned each time the main measurement is read.
@@ -173,24 +182,35 @@ void cleanup_perf() {
   }
 }
 
-static dpu_statistics g_dpu_stats = 
- {
-    {0, 0,   0, 0},
-    {0, 0,   0, 0},
-    {0, 0, 0, 0},
-    {0, 0, 0, 0},
-    {0, 0,   0, 0},
-    {0, 0,   0, 0},
-    {0, 0, 0, 0},
-    {0, 0, 0, 0},
-};
+static dpu_statistics g_dpu_stats;
+//  {
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+//     {0, 0, 0,0, 0,0, 0,0, 0, 0},
+// };
+
 void print_dpu_measurements(std::ostringstream &result) {
+  result<<" \"thread_stats\""<<":[";
   for(uint8_t thr=0; thr<THREADS_COUNT; ++thr) {
-    result<<" \"thread"<<int(thr)<<"\":"<<" {";
-    result<< "\"memory_read\":\"" <<g_dpu_stats[thr].reads_difference << "\",\t"
-          << "\"memory_writes\":\"" << g_dpu_stats[thr].writes_difference << "\" \t";
-    result<<" },"<<'\t';
+    result<<"{\"memory_reads\":\"" <<g_dpu_stats[thr].memory_reads << "\","
+          <<"\"l3_half0_bank0_hit\":\"" <<g_dpu_stats[thr].l3_half0_bank0_hit<< "\","
+          <<"\"l3_half0_bank1_hit\":\"" <<g_dpu_stats[thr].l3_half0_bank1_hit<< "\","
+          <<"\"l3_half0_bank0_miss\":\"" <<g_dpu_stats[thr].l3_half0_bank0_miss<< "\","
+          <<"\"l3_half0_bank1_miss\":\"" <<g_dpu_stats[thr].l3_half0_bank1_miss<< "\","
+          <<"\"l3_half1_bank0_hit\":\"" <<g_dpu_stats[thr].l3_half1_bank0_hit<< "\","
+          <<"\"l3_half1_bank1_hit\":\"" <<g_dpu_stats[thr].l3_half1_bank1_hit<< "\","
+          <<"\"l3_half1_bank0_miss\":\"" <<g_dpu_stats[thr].l3_half1_bank0_miss<< "\","
+          <<"\"l3_half1_bank1_miss\":\"" <<g_dpu_stats[thr].l3_half1_bank1_miss<< "\","
+          << "\"memory_writes\":\"" << g_dpu_stats[thr].memory_writes << "\"}";
+    if(thr!=THREADS_COUNT-1)
+      result<<",";
   }
+  result<<" ],"<<'\t';
 }
 
 void print_perf_measurements(std::ostringstream &result, measurement_t *measurement) {
@@ -213,8 +233,8 @@ void print_perf_measurements(std::ostringstream &result, measurement_t *measurem
     //         " clock=" <<values[4]<< '\t'<<
     //         " cpu_branches=" <<values[5]<< '\t'<<
     //         " l1_read_hit=" <<values[6];
-    result<<" \"l1_read_hit\":\""<<values[0]<< "\",\t"
-          <<" \"l1_read_miss\":\""<<values[1]<< "\",\t";
+    result<<" \"l1_read_hit\":\""<<values[0]<<"\",\t"
+          <<" \"l1_read_miss\":\""<<values[1]<<"\"\t";
 }
 //   .per_thread_stats = {}
 //   // .memory_read = 0,
@@ -308,14 +328,42 @@ read_hw_counters(std::string fname, uint64_t *counter)
 void
 update_dpu_counters(uint8_t thread_id)
 {
-  uint64_t memory_read;
-  uint64_t memory_write;
+  uint64_t memory_reads;
+  uint64_t memory_writes;
   
-  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter0", &memory_read);
-  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter1", &memory_write);
-  g_dpu_stats[thread_id].reads_difference = memory_read - g_dpu_stats[thread_id].memory_read;
-  g_dpu_stats[thread_id].memory_read = memory_read;
-  g_dpu_stats[thread_id].writes_difference = memory_write - g_dpu_stats[thread_id].memory_write;
-  g_dpu_stats[thread_id].memory_write = memory_write;
+  uint64_t l3_half0_bank0_hit;
+  uint64_t l3_half1_bank0_hit;
+  uint64_t l3_half0_bank1_hit;
+  uint64_t l3_half1_bank1_hit;
+
+  uint64_t l3_half0_bank0_miss;
+  uint64_t l3_half1_bank0_miss;
+  uint64_t l3_half0_bank1_miss;
+  uint64_t l3_half1_bank1_miss;
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter0", &memory_reads);
+  read_hw_counters("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter1", &memory_writes);
+
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &l3_half0_bank0_hit);
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &l3_half0_bank1_hit);
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &l3_half0_bank0_miss);
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &l3_half0_bank1_miss);
+
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &l3_half1_bank0_hit);
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &l3_half1_bank1_hit);
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &l3_half1_bank0_miss);
+  read_hw_counters("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &l3_half1_bank1_miss);
+
+  g_dpu_stats[thread_id].memory_reads = memory_reads - g_dpu_stats[thread_id].memory_reads;
+  g_dpu_stats[thread_id].memory_writes = memory_writes - g_dpu_stats[thread_id].memory_writes;
+
+  g_dpu_stats[thread_id].l3_half0_bank0_hit = l3_half0_bank0_hit - g_dpu_stats[thread_id].l3_half0_bank0_hit;
+  g_dpu_stats[thread_id].l3_half0_bank1_hit = l3_half0_bank1_hit - g_dpu_stats[thread_id].l3_half0_bank1_hit; 
+  g_dpu_stats[thread_id].l3_half0_bank0_miss = l3_half0_bank0_miss - g_dpu_stats[thread_id].l3_half0_bank0_miss;
+  g_dpu_stats[thread_id].l3_half0_bank1_miss= l3_half0_bank1_miss - g_dpu_stats[thread_id].l3_half0_bank0_miss;
+
+  g_dpu_stats[thread_id].l3_half1_bank0_hit= l3_half1_bank0_hit - g_dpu_stats[thread_id].l3_half1_bank0_hit;
+  g_dpu_stats[thread_id].l3_half1_bank1_hit= l3_half1_bank1_hit - g_dpu_stats[thread_id].l3_half1_bank1_hit; 
+  g_dpu_stats[thread_id].l3_half1_bank0_miss= l3_half1_bank0_miss - g_dpu_stats[thread_id].l3_half1_bank0_miss;
+  g_dpu_stats[thread_id].l3_half1_bank1_miss= l3_half1_bank1_miss - g_dpu_stats[thread_id].l3_half1_bank1_miss;
 }
 
