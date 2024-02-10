@@ -612,7 +612,8 @@ void* thread_master(void* cookie)
                 pthread_barrier_wait(&g_barrier);
 
                 // Reset the counter and start measuring
-                update_dpu_counters(thread_num);
+                start_dpu_global_counters();
+                start_dpu_thread_counters(thread_num);
                 perf_start_measurement(measure_l1_read_hit);
 
                 double ts1 = timestamp();
@@ -624,7 +625,8 @@ void* thread_master(void* cookie)
 
                 double ts2 = timestamp();
 
-                update_dpu_counters(thread_num);
+                update_dpu_global_counters();
+                update_dpu_thread_counters(thread_num);
 
                 perf_stop_measurement(measure_l1_read_hit);
                 perf_read_measurement(measure_l1_read_hit, &measurement, sizeof(measurement_t));
@@ -721,13 +723,13 @@ void* thread_worker(void* cookie)
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
-        update_dpu_counters(thread_num);
+        start_dpu_thread_counters(thread_num);
 
         g_func->func(g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_repeats);
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
-        update_dpu_counters(thread_num);
+        update_dpu_thread_counters(thread_num);
     }
 
     return NULL;
@@ -828,18 +830,7 @@ int main(int argc, char* argv[])
     std::cout <<"CPP version: "<<__cplusplus<<std::endl;
     int opt;
 
-    for(int i = 0; i<THREADS_COUNT;++i){
-      g_dpu_stats[i].memory_reads= 0;
-      g_dpu_stats[i].memory_writes= 0;
-      g_dpu_stats[i].l3_half0_bank0_hit= 0;
-      g_dpu_stats[i].l3_half0_bank1_hit= 0;
-      g_dpu_stats[i].l3_half0_bank0_miss= 0;
-      g_dpu_stats[i].l3_half0_bank1_miss= 0;
-      g_dpu_stats[i].l3_half1_bank0_hit= 0;
-      g_dpu_stats[i].l3_half1_bank1_hit= 0;
-      g_dpu_stats[i].l3_half1_bank0_miss= 0;
-      g_dpu_stats[i].l3_half1_bank1_miss= 0;
-    }
+    init_dpu_counters();
     while ( (opt = getopt(argc, argv, "hf:M:o:p:P:Qs:S:")) != -1 )
     {
         switch (opt) {
