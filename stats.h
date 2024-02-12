@@ -7,6 +7,8 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <map>
+#include <tuple>
 
 #include <utilities.h>
 
@@ -27,16 +29,16 @@ typedef struct {
     uint64_t memory_writes;
   } per_thread_stats[THREADS_COUNT]; 
 
-  uint64_t l3_half0_bank0_hit;
-  uint64_t l3_half1_bank0_hit;
-  uint64_t l3_half0_bank1_hit;
-  uint64_t l3_half1_bank1_hit;
-
-  uint64_t l3_half0_bank0_miss;
-  uint64_t l3_half1_bank0_miss;
-  uint64_t l3_half0_bank1_miss;
-  uint64_t l3_half1_bank1_miss;
-
+  std::map<std::string, std::tuple<std::string, uint64_t>> counters;
+  // uint64_t l3_half0_bank0_hit;
+  // uint64_t l3_half1_bank0_hit;
+  // uint64_t l3_half0_bank1_hit;
+  // uint64_t l3_half1_bank1_hit;
+  //
+  // uint64_t l3_half0_bank0_miss;
+  // uint64_t l3_half1_bank0_miss;
+  // uint64_t l3_half0_bank1_miss;
+  // uint64_t l3_half1_bank1_miss;
 } dpu_statistics;
 
 static dpu_statistics g_dpu_stats;
@@ -188,14 +190,17 @@ void cleanup_perf() {
 
 
 void print_dpu_measurements(std::ostringstream &result) {
-  result<<"\"l3_half0_bank0_hit\":\"" <<g_dpu_stats.l3_half0_bank0_hit<< "\","
-        <<"\"l3_half0_bank1_hit\":\"" <<g_dpu_stats.l3_half0_bank1_hit<< "\","
-        <<"\"l3_half0_bank0_miss\":\"" <<g_dpu_stats.l3_half0_bank0_miss<< "\","
-        <<"\"l3_half0_bank1_miss\":\"" <<g_dpu_stats.l3_half0_bank1_miss<< "\","
-        <<"\"l3_half1_bank0_hit\":\"" <<g_dpu_stats.l3_half1_bank0_hit<< "\","
-        <<"\"l3_half1_bank1_hit\":\"" <<g_dpu_stats.l3_half1_bank1_hit<< "\","
-        <<"\"l3_half1_bank0_miss\":\"" <<g_dpu_stats.l3_half1_bank0_miss<< "\","
-        <<"\"l3_half1_bank1_miss\":\"" <<g_dpu_stats.l3_half1_bank1_miss<< "\",";
+  for(auto& pair: g_dpu_stats.counters){
+    result<<"\""<<pair.first<<"\":\""<<std::get<1>(pair.second)<<"\",";
+  }
+  // result<<"\"l3_half0_bank0_hit\":\"" <<g_dpu_stats.l3_half0_bank0_hit<< "\","
+  //       <<"\"l3_half0_bank1_hit\":\"" <<g_dpu_stats.l3_half0_bank1_hit<< "\","
+  //       <<"\"l3_half0_bank0_miss\":\"" <<g_dpu_stats.l3_half0_bank0_miss<< "\","
+  //       <<"\"l3_half0_bank1_miss\":\"" <<g_dpu_stats.l3_half0_bank1_miss<< "\","
+  //       <<"\"l3_half1_bank0_hit\":\"" <<g_dpu_stats.l3_half1_bank0_hit<< "\","
+  //       <<"\"l3_half1_bank1_hit\":\"" <<g_dpu_stats.l3_half1_bank1_hit<< "\","
+  //       <<"\"l3_half1_bank0_miss\":\"" <<g_dpu_stats.l3_half1_bank0_miss<< "\","
+  //       <<"\"l3_half1_bank1_miss\":\"" <<g_dpu_stats.l3_half1_bank1_miss<< "\",";
   result<<" \"thread_stats\""<<":[";
   for(uint8_t thr=0; thr<THREADS_COUNT; ++thr) {
     result<<"{\"memory_reads\":\"" <<g_dpu_stats.per_thread_stats[thr].memory_reads << "\","
@@ -321,14 +326,23 @@ read_dpu_counter_file(std::string fname, uint64_t *counter)
 void 
 init_dpu_counters()
 {
-  g_dpu_stats.l3_half0_bank0_hit= 0;
-  g_dpu_stats.l3_half0_bank1_hit= 0;
-  g_dpu_stats.l3_half0_bank0_miss= 0;
-  g_dpu_stats.l3_half0_bank1_miss= 0;
-  g_dpu_stats.l3_half1_bank0_hit= 0;
-  g_dpu_stats.l3_half1_bank1_hit= 0;
-  g_dpu_stats.l3_half1_bank0_miss= 0;
-  g_dpu_stats.l3_half1_bank1_miss= 0;
+
+  g_dpu_stats.counters["l3_half0_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", 0);
+  g_dpu_stats.counters["l3_half0_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2",  0);
+  g_dpu_stats.counters["l3_half0_bank0_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3",  0);
+  g_dpu_stats.counters["l3_half0_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4",  0);
+  g_dpu_stats.counters["l3_half1_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1",  0);
+  g_dpu_stats.counters["l3_half1_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2",  0);
+  g_dpu_stats.counters["l3_half1_bank0_miss"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", 0);
+  g_dpu_stats.counters["l3_half1_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4",  0);
+  // g_dpu_stats.l3_half0_bank0_hit= 0;
+  // g_dpu_stats.l3_half0_bank1_hit= 0;
+  // g_dpu_stats.l3_half0_bank0_miss= 0;
+  // g_dpu_stats.l3_half0_bank1_miss= 0;
+  // g_dpu_stats.l3_half1_bank0_hit= 0;
+  // g_dpu_stats.l3_half1_bank1_hit= 0;
+  // g_dpu_stats.l3_half1_bank0_miss= 0;
+  // g_dpu_stats.l3_half1_bank1_miss= 0;
   for(int i = 0; i < THREADS_COUNT; ++i) {
     g_dpu_stats.per_thread_stats[i].memory_reads= 0;
     g_dpu_stats.per_thread_stats[i].memory_writes= 0;
@@ -338,49 +352,59 @@ init_dpu_counters()
 void
 start_dpu_global_counters()
 {
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &g_dpu_stats.l3_half0_bank0_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &g_dpu_stats.l3_half0_bank1_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &g_dpu_stats.l3_half0_bank0_miss);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &g_dpu_stats.l3_half0_bank1_miss);
-
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &g_dpu_stats.l3_half1_bank0_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &g_dpu_stats.l3_half1_bank1_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &g_dpu_stats.l3_half1_bank0_miss);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &g_dpu_stats.l3_half1_bank1_miss);
+  for(auto& pair: g_dpu_stats.counters){
+    auto& file_and_counter = pair.second;
+    read_dpu_counter_file(std::get<0>(file_and_counter), &std::get<1>(file_and_counter));
+  }
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &g_dpu_stats.l3_half0_bank0_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &g_dpu_stats.l3_half0_bank1_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &g_dpu_stats.l3_half0_bank0_miss);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &g_dpu_stats.l3_half0_bank1_miss);
+  //
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &g_dpu_stats.l3_half1_bank0_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &g_dpu_stats.l3_half1_bank1_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &g_dpu_stats.l3_half1_bank0_miss);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &g_dpu_stats.l3_half1_bank1_miss);
 }
 
 void
 update_dpu_global_counters()
 {
-  uint64_t l3_half0_bank0_hit;
-  uint64_t l3_half1_bank0_hit;
-  uint64_t l3_half0_bank1_hit;
-  uint64_t l3_half1_bank1_hit;
-
-  uint64_t l3_half0_bank0_miss;
-  uint64_t l3_half1_bank0_miss;
-  uint64_t l3_half0_bank1_miss;
-  uint64_t l3_half1_bank1_miss;
-
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &l3_half0_bank0_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &l3_half0_bank1_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &l3_half0_bank0_miss);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &l3_half0_bank1_miss);
-
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &l3_half1_bank0_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &l3_half1_bank1_hit);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &l3_half1_bank0_miss);
-  read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &l3_half1_bank1_miss);
-
-  g_dpu_stats.l3_half0_bank0_hit = l3_half0_bank0_hit - g_dpu_stats.l3_half0_bank0_hit;
-  g_dpu_stats.l3_half0_bank1_hit = l3_half0_bank1_hit - g_dpu_stats.l3_half0_bank1_hit; 
-  g_dpu_stats.l3_half0_bank0_miss = l3_half0_bank0_miss - g_dpu_stats.l3_half0_bank0_miss;
-  g_dpu_stats.l3_half0_bank1_miss= l3_half0_bank1_miss - g_dpu_stats.l3_half0_bank1_miss;
-
-  g_dpu_stats.l3_half1_bank0_hit= l3_half1_bank0_hit - g_dpu_stats.l3_half1_bank0_hit;
-  g_dpu_stats.l3_half1_bank1_hit= l3_half1_bank1_hit - g_dpu_stats.l3_half1_bank1_hit; 
-  g_dpu_stats.l3_half1_bank0_miss= l3_half1_bank0_miss - g_dpu_stats.l3_half1_bank0_miss;
-  g_dpu_stats.l3_half1_bank1_miss= l3_half1_bank1_miss - g_dpu_stats.l3_half1_bank1_miss;
+  for(auto& pair: g_dpu_stats.counters){
+    uint64_t counter_read =0;
+    auto& file_and_counter = pair.second;
+    read_dpu_counter_file(std::get<0>(file_and_counter), &counter_read);
+    std::get<1>(file_and_counter) = counter_read - std::get<1>(file_and_counter);
+  }
+  // uint64_t l3_half0_bank0_hit;
+  // uint64_t l3_half1_bank0_hit;
+  // uint64_t l3_half0_bank1_hit;
+  // uint64_t l3_half1_bank1_hit;
+  //
+  // uint64_t l3_half0_bank0_miss;
+  // uint64_t l3_half1_bank0_miss;
+  // uint64_t l3_half0_bank1_miss;
+  // uint64_t l3_half1_bank1_miss;
+  //
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &l3_half0_bank0_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &l3_half0_bank1_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &l3_half0_bank0_miss);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &l3_half0_bank1_miss);
+  //
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &l3_half1_bank0_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &l3_half1_bank1_hit);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &l3_half1_bank0_miss);
+  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &l3_half1_bank1_miss);
+  //
+  // g_dpu_stats.l3_half0_bank0_hit = l3_half0_bank0_hit - g_dpu_stats.l3_half0_bank0_hit;
+  // g_dpu_stats.l3_half0_bank1_hit = l3_half0_bank1_hit - g_dpu_stats.l3_half0_bank1_hit; 
+  // g_dpu_stats.l3_half0_bank0_miss = l3_half0_bank0_miss - g_dpu_stats.l3_half0_bank0_miss;
+  // g_dpu_stats.l3_half0_bank1_miss= l3_half0_bank1_miss - g_dpu_stats.l3_half0_bank1_miss;
+  //
+  // g_dpu_stats.l3_half1_bank0_hit= l3_half1_bank0_hit - g_dpu_stats.l3_half1_bank0_hit;
+  // g_dpu_stats.l3_half1_bank1_hit= l3_half1_bank1_hit - g_dpu_stats.l3_half1_bank1_hit; 
+  // g_dpu_stats.l3_half1_bank0_miss= l3_half1_bank0_miss - g_dpu_stats.l3_half1_bank0_miss;
+  // g_dpu_stats.l3_half1_bank1_miss= l3_half1_bank1_miss - g_dpu_stats.l3_half1_bank1_miss;
 }
 
 void
