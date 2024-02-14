@@ -614,7 +614,7 @@ void* thread_master(void* cookie)
                 // Reset the counter and start measuring
                 start_dpu_global_counters();
                 start_dpu_thread_counters(thread_num);
-                perf_start_measurement(measure_l1_read_hit);
+                perf_start_measurement(measure_cycle_count);
 
                 double ts1 = timestamp();
 
@@ -628,8 +628,8 @@ void* thread_master(void* cookie)
                 update_dpu_global_counters();
                 update_dpu_thread_counters(thread_num);
 
-                perf_stop_measurement(measure_l1_read_hit);
-                perf_read_measurement(measure_l1_read_hit, &measurement, sizeof(measurement_t));
+                perf_stop_measurement(measure_cycle_count);
+                perf_read_measurement(measure_cycle_count, &measurement, sizeof(measurement_t));
 
                 runtime = ts2 - ts1;
             }
