@@ -45,7 +45,7 @@ static dpu_statistics g_dpu_stats;
 // This structure is returned each time the main measurement is read.
 // It contains the result of all the measurements, taken simultaneously.
 // The order of the measurements is unknown - used the ID.
-#define EVENTS_MEASURED 2
+#define EVENTS_MEASURED 4
 typedef struct {
   uint64_t recorded_values;
   struct {
@@ -70,6 +70,9 @@ perf_measurement_t *measure_cpu_branches;
 
 perf_measurement_t *measure_l1_read_hit;
 perf_measurement_t *measure_l1_read_miss;
+
+perf_measurement_t *measure_ll_read_hit;
+perf_measurement_t *measure_ll_read_miss;
 static int prepared_successfully = 0;
 
 // // Call prepare before executing main
@@ -133,19 +136,37 @@ void prepare_perf_measurements() {
   // Fail if the perf API is unsupported
   assert_support();
 
-  // Create a measurement using hardware (CPU) registers. Measure the number of instructions amassed.
+  // Create a measurement using hardware (CPU) registers. Measure the number of cycles.
+  measure_cycle_count = perf_create_measurement(PERF_TYPE_HARDWARE, 
+                                            PERF_COUNT_HW_CPU_CYCLES,
+                                            0,
+                                            -1);
+  prepare_measurement("cycles", measure_cycle_count, NULL);
+
   measure_l1_read_hit = perf_create_measurement(PERF_TYPE_HW_CACHE, 
                                             (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
                                             0,
                                             -1);
-  prepare_measurement("l1_read_hit", measure_l1_read_hit, NULL);
+  prepare_measurement("l1_read_hit", measure_l1_read_hit, measure_cycle_count);
 
   measure_l1_read_miss = perf_create_measurement(PERF_TYPE_HW_CACHE, 
                                             (PERF_COUNT_HW_CACHE_L1D | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
                                             0,
                                             -1);
-  // This might be the cause for overcounting the events, the l1 misses are bound to l1 read hits
-  prepare_measurement("l1_read_miss", measure_l1_read_miss, measure_l1_read_hit);
+  prepare_measurement("l1_read_miss", measure_l1_read_miss, measure_cycle_count);
+
+  measure_ll_read_hit = perf_create_measurement(PERF_TYPE_HW_CACHE, 
+                                            (PERF_COUNT_HW_CACHE_LL | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16),
+                                            0,
+                                            -1);
+  prepare_measurement("ll_read_hit", measure_ll_read_hit, measure_cycle_count);
+
+  measure_ll_read_miss = perf_create_measurement(PERF_TYPE_HW_CACHE, 
+                                            (PERF_COUNT_HW_CACHE_LL  | PERF_COUNT_HW_CACHE_OP_READ<<8 | PERF_COUNT_HW_CACHE_RESULT_MISS << 16),
+                                            0,
+                                            -1);
+  prepare_measurement("ll_read_miss", measure_ll_read_miss, measure_cycle_count);
+
   // Mark the preparation stage as successfuly
   prepared_successfully = 1;
 }
@@ -186,6 +207,16 @@ void cleanup_perf() {
     perf_close_measurement(measure_l1_read_miss);
     free((void *)measure_l1_read_miss);
   }
+
+  if (measure_ll_read_hit != NULL) {
+    perf_close_measurement(measure_ll_read_hit);
+    free((void *)measure_ll_read_hit);
+  }
+
+  if (measure_ll_read_miss != NULL) {
+    perf_close_measurement(measure_ll_read_miss);
+    free((void *)measure_ll_read_miss);
+  }
 }
 
 
@@ -212,12 +243,12 @@ void print_dpu_measurements(std::ostringstream &result) {
 }
 
 void print_perf_measurements(std::ostringstream &result, measurement_t *measurement) {
-    uint64_t values[EVENTS_MEASURED] = {0};
+    uint64_t values[EVENTS_MEASURED + 1] = {0};
     // perf_measurement_t *taken_measurements[] = {all_measurements, measure_instruction_count, measure_cycle_count, measure_context_switches, measure_cpu_clock, measure_cpu_branches, measure_l1_read_hit};
 
-    perf_measurement_t *taken_measurements[] = {measure_l1_read_hit, measure_l1_read_miss};
+    perf_measurement_t *taken_measurements[] = {measure_cycle_count, measure_l1_read_hit, measure_l1_read_miss, measure_ll_read_hit, measure_ll_read_miss};
     for (uint64_t j = 0; j < measurement->recorded_values; j++) {
-      for (int k = 0; k < EVENTS_MEASURED; k++) {
+      for (int k = 0; k < EVENTS_MEASURED + 1; k++) {
         if (measurement->values[j].id == taken_measurements[k]->id) {
           values[k] = measurement->values[j].value;
           break;
@@ -231,8 +262,10 @@ void print_perf_measurements(std::ostringstream &result, measurement_t *measurem
     //         " clock=" <<values[4]<< '\t'<<
     //         " cpu_branches=" <<values[5]<< '\t'<<
     //         " l1_read_hit=" <<values[6];
-    result<<" \"l1_read_hit\":\""<<values[0]<<"\",\t"
-          <<" \"l1_read_miss\":\""<<values[1]<<"\"\t";
+    result<<" \"l1_read_hit\":\""<<values[1]<<"\",\t"
+          <<" \"l1_read_miss\":\""<<values[2]<<"\",\t"
+          <<" \"ll_read_hit\":\""<<values[3]<<"\",\t"
+          <<" \"ll_read_miss\":\""<<values[4]<<"\"\t";
 }
 //   .per_thread_stats = {}
 //   // .memory_read = 0,
@@ -295,11 +328,11 @@ read_file(char const *path, char **out_bytes, size_t *out_bytes_len)
 }
 
 int
-open_file(char *fname, FILE **file)
+open_file(const char *fname, FILE **file, const char *mode)
 {
     // char fname[100];
     // sprintf(fname, "/tmp/build/stats%d", test_num);
-    *file = fopen(fname, "r");
+    *file = fopen(fname, mode);
 
     if(*file == NULL)
     {
@@ -307,7 +340,6 @@ open_file(char *fname, FILE **file)
     }
   return SUCCESS;
 }
-
 
 int
 read_dpu_counter_file(std::string fname, uint64_t *counter)
@@ -335,14 +367,6 @@ init_dpu_counters()
   g_dpu_stats.counters["l3_half1_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2",  0);
   g_dpu_stats.counters["l3_half1_bank0_miss"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", 0);
   g_dpu_stats.counters["l3_half1_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4",  0);
-  // g_dpu_stats.l3_half0_bank0_hit= 0;
-  // g_dpu_stats.l3_half0_bank1_hit= 0;
-  // g_dpu_stats.l3_half0_bank0_miss= 0;
-  // g_dpu_stats.l3_half0_bank1_miss= 0;
-  // g_dpu_stats.l3_half1_bank0_hit= 0;
-  // g_dpu_stats.l3_half1_bank1_hit= 0;
-  // g_dpu_stats.l3_half1_bank0_miss= 0;
-  // g_dpu_stats.l3_half1_bank1_miss= 0;
   for(int i = 0; i < THREADS_COUNT; ++i) {
     g_dpu_stats.per_thread_stats[i].memory_reads= 0;
     g_dpu_stats.per_thread_stats[i].memory_writes= 0;
@@ -356,15 +380,7 @@ start_dpu_global_counters()
     auto& file_and_counter = pair.second;
     read_dpu_counter_file(std::get<0>(file_and_counter), &std::get<1>(file_and_counter));
   }
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &g_dpu_stats.l3_half0_bank0_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &g_dpu_stats.l3_half0_bank1_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &g_dpu_stats.l3_half0_bank0_miss);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &g_dpu_stats.l3_half0_bank1_miss);
-  //
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &g_dpu_stats.l3_half1_bank0_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &g_dpu_stats.l3_half1_bank1_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &g_dpu_stats.l3_half1_bank0_miss);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &g_dpu_stats.l3_half1_bank1_miss);
+
 }
 
 void
@@ -376,40 +392,22 @@ update_dpu_global_counters()
     read_dpu_counter_file(std::get<0>(file_and_counter), &counter_read);
     std::get<1>(file_and_counter) = counter_read - std::get<1>(file_and_counter);
   }
-  // uint64_t l3_half0_bank0_hit;
-  // uint64_t l3_half1_bank0_hit;
-  // uint64_t l3_half0_bank1_hit;
-  // uint64_t l3_half1_bank1_hit;
-  //
-  // uint64_t l3_half0_bank0_miss;
-  // uint64_t l3_half1_bank0_miss;
-  // uint64_t l3_half0_bank1_miss;
-  // uint64_t l3_half1_bank1_miss;
-  //
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", &l3_half0_bank0_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2", &l3_half0_bank1_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3", &l3_half0_bank0_miss);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4", &l3_half0_bank1_miss);
-  //
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1", &l3_half1_bank0_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2", &l3_half1_bank1_hit);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", &l3_half1_bank0_miss);
-  // read_dpu_counter_file("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4", &l3_half1_bank1_miss);
-  //
-  // g_dpu_stats.l3_half0_bank0_hit = l3_half0_bank0_hit - g_dpu_stats.l3_half0_bank0_hit;
-  // g_dpu_stats.l3_half0_bank1_hit = l3_half0_bank1_hit - g_dpu_stats.l3_half0_bank1_hit; 
-  // g_dpu_stats.l3_half0_bank0_miss = l3_half0_bank0_miss - g_dpu_stats.l3_half0_bank0_miss;
-  // g_dpu_stats.l3_half0_bank1_miss= l3_half0_bank1_miss - g_dpu_stats.l3_half0_bank1_miss;
-  //
-  // g_dpu_stats.l3_half1_bank0_hit= l3_half1_bank0_hit - g_dpu_stats.l3_half1_bank0_hit;
-  // g_dpu_stats.l3_half1_bank1_hit= l3_half1_bank1_hit - g_dpu_stats.l3_half1_bank1_hit; 
-  // g_dpu_stats.l3_half1_bank0_miss= l3_half1_bank0_miss - g_dpu_stats.l3_half1_bank0_miss;
-  // g_dpu_stats.l3_half1_bank1_miss= l3_half1_bank1_miss - g_dpu_stats.l3_half1_bank1_miss;
+
 }
 
 void
 start_dpu_thread_counters(uint8_t thread_id)
 {
+  FILE *fptr;
+
+  open_file(("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) + "/event0").c_str(), &fptr, "w");
+  fprintf(fptr, "0x4c");
+  fclose(fptr);
+  
+  open_file(("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) + "/event1").c_str(), &fptr, "w");
+  fprintf(fptr, "0x4d");
+  fclose(fptr);
+
   read_dpu_counter_file("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter0", &g_dpu_stats.per_thread_stats[thread_id].memory_reads);
   read_dpu_counter_file("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) +"/counter1", &g_dpu_stats.per_thread_stats[thread_id].memory_writes);
 }
