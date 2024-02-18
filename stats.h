@@ -29,7 +29,7 @@ typedef struct {
     uint64_t memory_writes;
   } per_thread_stats[THREADS_COUNT]; 
 
-  std::map<std::string, std::tuple<std::string, uint64_t>> counters;
+  std::map<std::string, std::tuple<std::string, uint64_t, std::string>> counters;
   // uint64_t l3_half0_bank0_hit;
   // uint64_t l3_half1_bank0_hit;
   // uint64_t l3_half0_bank1_hit;
@@ -359,14 +359,14 @@ void
 init_dpu_counters()
 {
 
-  g_dpu_stats.counters["l3_half0_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter1", 0);
-  g_dpu_stats.counters["l3_half0_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter2",  0);
-  g_dpu_stats.counters["l3_half0_bank0_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter3",  0);
-  g_dpu_stats.counters["l3_half0_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/counter4",  0);
-  g_dpu_stats.counters["l3_half1_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter1",  0);
-  g_dpu_stats.counters["l3_half1_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter2",  0);
-  g_dpu_stats.counters["l3_half1_bank0_miss"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/counter3", 0);
-  g_dpu_stats.counters["l3_half1_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/counter4",  0);
+  g_dpu_stats.counters["l3_half0_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s1", 0, "0x17");
+  g_dpu_stats.counters["l3_half0_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s2",  0, "0x18");
+  g_dpu_stats.counters["l3_half0_bank0_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s3",  0, "0x19");
+  g_dpu_stats.counters["l3_half0_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s4",  0, "0x1a");
+  g_dpu_stats.counters["l3_half1_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s1",  0, "0x17");
+  g_dpu_stats.counters["l3_half1_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s2",  0, "0x18");
+  g_dpu_stats.counters["l3_half1_bank0_miss"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/%s3", 0, "0x19");
+  g_dpu_stats.counters["l3_half1_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s4",  0, "0x1a");
   for(int i = 0; i < THREADS_COUNT; ++i) {
     g_dpu_stats.per_thread_stats[i].memory_reads= 0;
     g_dpu_stats.per_thread_stats[i].memory_writes= 0;
@@ -376,30 +376,53 @@ init_dpu_counters()
 void
 start_dpu_global_counters()
 {
+
+  FILE *fptr;
   for(auto& pair: g_dpu_stats.counters){
-    auto& file_and_counter = pair.second;
-    read_dpu_counter_file(std::get<0>(file_and_counter), &std::get<1>(file_and_counter));
+    char buffer[200];
+    auto& file_counter_event = pair.second;
+    snprintf(buffer, 200, std::get<0>(file_counter_event).c_str(), "event");
+    open_file(buffer, &fptr, "w");
+    fprintf(fptr, std::get<2>(file_counter_event).c_str());
+    fclose(fptr);
   }
 
+  open_file("/sys/class/hwmon/hwmon0/l3cachehalf0/enable", &fptr, "w");
+  fprintf(fptr, "1");
+  fclose(fptr);
+  open_file("/sys/class/hwmon/hwmon0/l3cachehalf1/enable", &fptr, "w");
+  fprintf(fptr, "1");
+  fclose(fptr);
+
+  for(auto& pair: g_dpu_stats.counters){
+    char buffer[200];
+    auto& file_counter_event = pair.second;
+
+    snprintf(buffer, 200, std::get<0>(file_counter_event).c_str(), "counter");
+    read_dpu_counter_file(buffer, &std::get<1>(file_counter_event));
+  }
 }
 
 void
 update_dpu_global_counters()
 {
   for(auto& pair: g_dpu_stats.counters){
-    uint64_t counter_read =0;
-    auto& file_and_counter = pair.second;
-    read_dpu_counter_file(std::get<0>(file_and_counter), &counter_read);
-    std::get<1>(file_and_counter) = counter_read - std::get<1>(file_and_counter);
-  }
 
+    uint64_t counter_read =0;
+
+    char buffer[200];
+    auto& file_counter_event = pair.second;
+    snprintf(buffer, 200, std::get<0>(file_counter_event).c_str(), "counter");
+
+    read_dpu_counter_file(buffer, &counter_read);
+    std::get<1>(file_counter_event) = counter_read - std::get<1>(file_counter_event);
+  }
 }
 
 void
 start_dpu_thread_counters(uint8_t thread_id)
 {
   FILE *fptr;
-
   open_file(("/sys/class/hwmon/hwmon0/tile"+std::to_string(thread_id/2) + "/event0").c_str(), &fptr, "w");
   fprintf(fptr, "0x4c");
   fclose(fptr);
