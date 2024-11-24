@@ -1,8 +1,8 @@
 # -*- mode: autoconf -*-
 
-AC_PREREQ(2.69)
+AC_PREREQ([2.71])
 
-AC_INIT(pmbw, 0.6.3)
+AC_INIT([pmbw],[0.6.3])
 AC_CONFIG_SRCDIR(pmbw.cc)
 AC_CONFIG_AUX_DIR(acscripts)
 
@@ -60,6 +60,20 @@ AC_CHECK_LIB(cap, cap_get_proc,
   [AC_MSG_ERROR(libcap-dev library needed!)]
 )
 
+# AC_CHECK_HEADERS([dpu_statistics.h])
+# AC_CHECK_LIB([dpu_counters], [measure_cycle_count ], [LIBS="$LIBS -ldpu_counters", ])
+
+AC_CHECK_HEADERS([dpu_statistics.h], [AC_DEFINE([HAVE_DPU_STATISTICS_H], [1], [Define if dpu_statistics.h is available])])
+
+AC_CHECK_LIB([dpu_counters], [measure_cycle_count], [
+    LIBS="$LIBS -ldpu_counters"
+    AC_DEFINE([HAVE_DPU_COUNTERS], [1], [Define if dpu_counters library is available])
+])
+
+# AC_CHECK_LIB([dpu_counters], [print_perf_measurements ])
+# AC_CHECK_LIB([dpu_counters], [cleanup_perf ])
+# AC_CHECK_LIB([dpu_counters], [prepare_perf_measurements])
+
 if [ ! "$ON_WINDOWS" ]; then
 
    AC_CHECK_LIB(rt, clock_gettime,
@@ -75,4 +89,5 @@ AC_DEFINE_UNQUOTED(HAVE_POSIX_MEMALIGN, $HAVE_POSIX_MEMALIGN)
 
 # transform Makefiles
 
-AC_OUTPUT([Makefile])
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT
