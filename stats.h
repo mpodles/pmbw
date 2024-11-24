@@ -355,18 +355,73 @@ read_dpu_counter_file(std::string fname, uint64_t *counter)
   return result;
 }
 
+// Event list for L3CACHE
+// 0x0: DISABLE
+// 0x1: CYCLES
+// 0x2: TOTAL_RD_REQ_IN
+// 0x3: TOTAL_WR_REQ_IN
+// 0x4: TOTAL_WR_DBID_ACK
+// 0x5: TOTAL_WR_DATA_IN
+// 0x6: TOTAL_WR_COMP
+// 0x7: TOTAL_RD_DATA_OUT
+// 0x8: TOTAL_CDN_REQ_IN_BANK0
+// 0x9: TOTAL_CDN_REQ_IN_BANK1
+// 0xa: TOTAL_DDN_REQ_IN_BANK0
+// 0xb: TOTAL_DDN_REQ_IN_BANK1
+// 0xc: TOTAL_EMEM_RD_RES_IN_BANK0
+// 0xd: TOTAL_EMEM_RD_RES_IN_BANK1
+// 0xe: TOTAL_CACHE_RD_RES_IN_BANK0
+// 0xf: TOTAL_CACHE_RD_RES_IN_BANK1
+// 0x10: TOTAL_EMEM_RD_REQ_BANK0
+// 0x11: TOTAL_EMEM_RD_REQ_BANK1
+// 0x12: TOTAL_EMEM_WR_REQ_BANK0
+// 0x13: TOTAL_EMEM_WR_REQ_BANK1
+// 0x14: TOTAL_RD_REQ_OUT
+// 0x15: TOTAL_WR_REQ_OUT
+// 0x16: TOTAL_RD_RES_IN
+// 0x17: HITS_BANK0
+// 0x18: HITS_BANK1
+// 0x19: MISSES_BANK0
+// 0x1a: MISSES_BANK1
+// 0x1b: ALLOCATIONS_BANK0
+// 0x1c: ALLOCATIONS_BANK1
+// 0x1d: EVICTIONS_BANK0
+// 0x1e: EVICTIONS_BANK1
+// 0x1f: DBID_REJECT
+// 0x20: WRDB_REJECT_BANK0
+// 0x21: WRDB_REJECT_BANK1
+// 0x22: CMDQ_REJECT_BANK0
+// 0x23: CMDQ_REJECT_BANK1
+// 0x24: COB_REJECT_BANK0
+// 0x25: COB_REJECT_BANK1
+// 0x26: TRB_REJECT_BANK0
+// 0x27: TRB_REJECT_BANK1
+// 0x28: TAG_REJECT_BANK0
+// 0x29: TAG_REJECT_BANK1
+// 0x2a: ANY_REJECT_BANK0
+// 0x2b: ANY_REJECT_BANK1
+
 void 
 init_dpu_counters()
 {
 
-  g_dpu_stats.counters["l3_half0_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s1", 0, "0x17");
-  g_dpu_stats.counters["l3_half0_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s2",  0, "0x18");
-  g_dpu_stats.counters["l3_half0_bank0_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s3",  0, "0x19");
-  g_dpu_stats.counters["l3_half0_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s4",  0, "0x1a");
-  g_dpu_stats.counters["l3_half1_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s1",  0, "0x17");
-  g_dpu_stats.counters["l3_half1_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s2",  0, "0x18");
-  g_dpu_stats.counters["l3_half1_bank0_miss"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/%s3", 0, "0x19");
-  g_dpu_stats.counters["l3_half1_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s4",  0, "0x1a");
+  // g_dpu_stats.counters["l3_half0_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s1", 0, "0x17");
+  // g_dpu_stats.counters["l3_half0_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s2",  0, "0x18");
+  // g_dpu_stats.counters["l3_half0_bank0_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s3",  0, "0x19");
+  // g_dpu_stats.counters["l3_half0_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s4",  0, "0x1a");
+  // g_dpu_stats.counters["l3_half1_bank0_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s1",  0, "0x17");
+  // g_dpu_stats.counters["l3_half1_bank1_hit"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s2",  0, "0x18");
+  // g_dpu_stats.counters["l3_half1_bank0_miss"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/%s3", 0, "0x19");
+  // g_dpu_stats.counters["l3_half1_bank1_miss"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s4",  0, "0x1a");
+
+  g_dpu_stats.counters["l3_half0_read_request_in"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s1", 0, "0x2");
+  g_dpu_stats.counters["l3_half0_write_request_in"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s2",  0, "0x3");
+  g_dpu_stats.counters["l3_half0_read_request_out"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s3",  0, "0x14");
+  g_dpu_stats.counters["l3_half0_write_request_out"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf0/%s4",  0, "0x15");
+  g_dpu_stats.counters["l3_half1_read_request_in"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s1",  0, "0x2");
+  g_dpu_stats.counters["l3_half1_write_request_in"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s2",  0, "0x3");
+  g_dpu_stats.counters["l3_half1_read_request_out"]= std::make_tuple( "/sys/class/hwmon/hwmon0/l3cachehalf1/%s3", 0, "0x14");
+  g_dpu_stats.counters["l3_half1_write_request_out"]= std::make_tuple("/sys/class/hwmon/hwmon0/l3cachehalf1/%s4",  0, "0x15");
   for(int i = 0; i < THREADS_COUNT; ++i) {
     g_dpu_stats.per_thread_stats[i].memory_reads= 0;
     g_dpu_stats.per_thread_stats[i].memory_writes= 0;

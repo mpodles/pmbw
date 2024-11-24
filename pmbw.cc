@@ -46,7 +46,12 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "stats.h"
+// #include "stats.h"
+extern "C" {
+#ifdef HAVE_DPU_COUNTERS
+#include "dpu_statistics.h"
+#endif
+}
 
 #if ON_WINDOWS
 #include <windows.h>
@@ -525,9 +530,6 @@ void* thread_master(void* cookie)
 
     pin_self_to_core(thread_num);
 
-    prepare_perf_measurements();
-    measurement_t measurement;
-
     uint64_t factor = 1024*1024*1024;
 
     for (const uint64_t* areasize = areasize_list; *areasize; ++areasize)
@@ -611,26 +613,21 @@ void* thread_master(void* cookie)
                 // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
 
-                // Reset the counter and start measuring
-                start_dpu_global_counters();
-                start_dpu_thread_counters(thread_num);
-                perf_start_measurement(measure_cycle_count);
 
                 double ts1 = timestamp();
-
+            
+#ifdef HAVE_DPU_COUNTERS
+            measure_start(6);
+#endif
                 g_func->func(g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_repeats);
+#ifdef HAVE_DPU_COUNTERS
+            measure_finish(6);
+#endif
 
                 // *** Barrier ****
                 pthread_barrier_wait(&g_barrier);
 
                 double ts2 = timestamp();
-
-                update_dpu_global_counters();
-                update_dpu_thread_counters(thread_num);
-
-                perf_stop_measurement(measure_cycle_count);
-                perf_read_measurement(measure_cycle_count, &measurement, sizeof(measurement_t));
-
                 runtime = ts2 - ts1;
             }
 
@@ -682,8 +679,6 @@ void* thread_master(void* cookie)
                        << "\"bandwidth\": \"" << testvol / runtime << "\", \t"
                        << "\"rate\": \"" << runtime / testaccess<< "\", \t";
 
-                print_dpu_measurements(result);
-                print_perf_measurements(result, &measurement);
                 result << "}";
                 std::cout << result.str() << std::endl;
 
@@ -697,7 +692,6 @@ void* thread_master(void* cookie)
 
     // *** Barrier ****
     pthread_barrier_wait(&g_barrier);
-    cleanup_perf();
     return NULL;
 }
 
@@ -723,13 +717,13 @@ void* thread_worker(void* cookie)
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
-        start_dpu_thread_counters(thread_num);
+        // start_dpu_thread_counters(thread_num);
 
         g_func->func(g_memarea + thread_num * g_thrsize_spaced, g_thrsize, g_repeats);
 
         // *** Barrier ****
         pthread_barrier_wait(&g_barrier);
-        update_dpu_thread_counters(thread_num);
+        // update_dpu_thread_counters(thread_num);
     }
 
     return NULL;
@@ -830,7 +824,6 @@ int main(int argc, char* argv[])
     std::cout <<"CPP version: "<<__cplusplus<<std::endl;
     int opt;
 
-    init_dpu_counters();
     while ( (opt = getopt(argc, argv, "hf:M:o:p:P:Qs:S:")) != -1 )
     {
         switch (opt) {
@@ -976,6 +969,8 @@ int main(int argc, char* argv[])
     // due to roundup in loop to next cache-line size, add one extra cache-line per thread
     g_memsize += g_physical_cpus * 256;
 
+    // I don't remember why I needed that
+    // g_memsize  /= 4;
     ERR("Allocating " << g_memsize / 1024/1024 << " MiB for testing.");
 
     // allocate memory area
