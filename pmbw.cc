@@ -61,10 +61,10 @@ extern "C" {
 // --- Global Settings and Variables
 
 // minimum duration of test, if smaller re-run
-double g_min_time = 1.0;
+double g_min_time = 10.0;
 
 // target average duration of test
-double g_avg_time = 1.5;
+double g_avg_time = 50;
 
 // filter of functions to run, set by command line
 std::vector<const char*> gopt_funcfilter;
@@ -87,6 +87,9 @@ bool gopt_testcycle = false;
 
 // option to change the output file from default "stats.txt"
 const char* gopt_output_file = "stats.txt";
+
+// cpu mask
+const char* gopt_cpumask = NULL;
 
 // error writers
 #define ERR(x)  do { std::cerr << x << std::endl; } while(0)
@@ -346,12 +349,6 @@ static inline bool match_funcfilter(const char* funcname)
     }
 
     return false;
-}
-
-struct Results {} g_results;
-
-void write_results_to_file(Results results)
-{
 }
 
 // pin this thread to the core, where cores are numbered 0 .. n-1
@@ -655,9 +652,7 @@ void* thread_master(void* cookie)
                 ERR("run time = " << runtime << " -> next test with repeat factor=" << factor);
 
                 std::ostringstream result;
-                // result << "RESULT\t";
 
-                // write_results_to_file(Results();
                 // output date, time and hostname to result line
                 char datetime[64];
                 time_t tnow = time(NULL);
@@ -737,14 +732,29 @@ void run_func_by_threads(const TestFunction* func)
     }
 
     int nthreads = 1;
+    int mask = 0;
 
-    if (gopt_nthreads_min != 0)
-        nthreads = gopt_nthreads_min;
+    if (gopt_cpumask) {
+        // parse hex string to int
+        mask = std::stoi(gopt_cpumask, nullptr, 16);
+        std::cout << "CPU mask: " << mask << std::endl;
+        nthreads = 0;
+        for (uint8_t i = 0; i < sizeof(int) * 8; i++) {
+            if (mask & (1 << i)) {
+                nthreads++;
+            }
+        }
+    }
+    else { 
+        if (gopt_nthreads_min != 0)
+            nthreads = gopt_nthreads_min;
 
-    if (gopt_nthreads_max == 0)
-        gopt_nthreads_max = g_physical_cpus + 2;
+        if (gopt_nthreads_max == 0)
+            gopt_nthreads_max = g_physical_cpus + 2;
+    }
 
     bool exp_have_physical = false;
+
 
     while (1)
     {
@@ -754,11 +764,24 @@ void run_func_by_threads(const TestFunction* func)
 
         // create barrier and run threads
         pthread_barrier_init(&g_barrier, NULL, nthreads);
-
         pthread_t thr[nthreads];
-        pthread_create(&thr[0], NULL, thread_master, new int(0));
-        for (int p = 1; p < nthreads; ++p)
-            pthread_create(&thr[p], NULL, thread_worker, new int(p));
+
+        if (mask) {
+            int thread = 0;
+            for (uint8_t bit = 0; bit < sizeof(int) * 8; bit++) {
+                if (mask & (1 << bit)) {
+                    if (thread == 0)
+                        pthread_create(&thr[thread], NULL, thread_master, new int(bit));
+                    else
+                        pthread_create(&thr[thread], NULL, thread_worker, new int(bit));
+                    thread++;
+                }
+            }
+        } else {
+            pthread_create(&thr[0], NULL, thread_master, new int(0));
+            for (int p = 1; p < nthreads; ++p)
+                pthread_create(&thr[p], NULL, thread_worker, new int(p));
+        }
 
         for (int p = 0; p < nthreads; ++p)
             pthread_join(thr[p], NULL);
@@ -808,6 +831,7 @@ void print_usage(const char* prog)
         << "Options:" << std::endl
         << "  -f <match>     Run only benchmarks containing this substring, can be used multile times. Try \"list\"." << std::endl
         << "  -M <size>      Limit the maximum amount of memory allocated at startup [byte]." << std::endl
+        << "  -m <mask>      cpu mask to use for the benchmark." << std::endl
         << "  -o <file>      Write the results to <file> instead of stats.txt." << std::endl
         << "  -p <nthrs>     Run benchmarks with at least this thread count." << std::endl
         << "  -P <nthrs>     Run benchmarks with at most this thread count (overrides detected processor count)." << std::endl
@@ -824,7 +848,7 @@ int main(int argc, char* argv[])
     std::cout <<"CPP version: "<<__cplusplus<<std::endl;
     int opt;
 
-    while ( (opt = getopt(argc, argv, "hf:M:o:p:P:Qs:S:")) != -1 )
+    while ( (opt = getopt(argc, argv, "hf:M:m:o:p:P:Qs:S:")) != -1 )
     {
         switch (opt) {
         default:
@@ -865,6 +889,11 @@ int main(int argc, char* argv[])
             else {
                 ERR("Setting memory limit to " << gopt_memlimit << ".");
             }
+            break;
+
+        case 'm':
+            gopt_cpumask = optarg;
+            ERR("Using CPU mask " << gopt_cpumask << ".");
             break;
 
         case 'o':

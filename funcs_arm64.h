@@ -387,7 +387,7 @@ void ScanRW64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
         : "x0", "x1", "cc", "memory");
 }
 
-REGISTER(ScanRW64PtrSimpleLoop, 8,8, 1);
+REGISTER(ScanRW64PtrSimpleLoop, 16, 8, 1);
 
 // 64-bit reader in an unrolled loop (Assembler version)
 void ScanRead64PtrUnrollLoop(char* memarea, size_t size, size_t repeats)
