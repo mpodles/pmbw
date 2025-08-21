@@ -45,6 +45,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <bitset>
 
 // #include "stats.h"
 extern "C" {
@@ -89,7 +90,7 @@ bool gopt_testcycle = false;
 const char* gopt_output_file = "stats.txt";
 
 // cpu mask
-const char* gopt_cpumask = NULL;
+std::string gopt_cpumask = "";
 
 // error writers
 #define ERR(x)  do { std::cerr << x << std::endl; } while(0)
@@ -732,18 +733,20 @@ void run_func_by_threads(const TestFunction* func)
     }
 
     int nthreads = 1;
-    int mask = 0;
+    uint64_t mask = 0;
 
-    if (gopt_cpumask) {
+    if (!gopt_cpumask.empty()) {
         // parse hex string to int
-        mask = std::stoi(gopt_cpumask, nullptr, 16);
-        std::cout << "CPU mask: " << mask << std::endl;
-        nthreads = 0;
-        for (uint8_t i = 0; i < sizeof(int) * 8; i++) {
-            if (mask & (1 << i)) {
-                nthreads++;
+        for (size_t i = 0; i < gopt_cpumask.size(); i++) {
+            if (gopt_cpumask.at(i) >= '0' && gopt_cpumask.at(i) <= '9') {
+                mask = mask * 16 + (gopt_cpumask.at(i) - '0');
+            } else if (gopt_cpumask.at(i) >= 'a' && gopt_cpumask.at(i) <= 'f') {
+                mask = mask * 16 + (gopt_cpumask.at(i) - 'a' + 10);
             }
         }
+        std::cout << "CPU mask: " << std::bitset<64>(mask) << std::endl;
+        nthreads = std::bitset<64>(mask).count();
+        std::cout << "Number of threads: " << nthreads << std::endl;
     }
     else { 
         if (gopt_nthreads_min != 0)
@@ -768,8 +771,8 @@ void run_func_by_threads(const TestFunction* func)
 
         if (mask) {
             int thread = 0;
-            for (uint8_t bit = 0; bit < sizeof(int) * 8; bit++) {
-                if (mask & (1 << bit)) {
+            for (uint8_t bit = 0; bit < sizeof(uint64_t) * 8; bit++) {
+                if (std::bitset<64>(mask).test(bit)) {
                     if (thread == 0)
                         pthread_create(&thr[thread], NULL, thread_master, new int(bit));
                     else
