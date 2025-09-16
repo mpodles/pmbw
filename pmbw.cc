@@ -65,7 +65,7 @@ extern "C" {
 double g_min_time = 10.0;
 
 // target average duration of test
-double g_avg_time = 50;
+double g_avg_time = 30;
 
 // filter of functions to run, set by command line
 std::vector<const char*> gopt_funcfilter;
