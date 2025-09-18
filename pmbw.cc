@@ -64,6 +64,9 @@ extern "C" {
 // minimum duration of test, if smaller re-run
 double g_min_time = 10.0;
 
+// number of rounds to run
+unsigned int g_rounds = 1;
+
 // target average duration of test
 double g_avg_time = 30;
 
@@ -544,7 +547,7 @@ void* thread_master(void* cookie)
             continue;
         }
 
-        for (unsigned int round = 0; round < 4; ++round)
+        for (unsigned int round = 0; round < g_rounds; ++round)
         {
             // divide area by thread number
             g_thrsize = *areasize / g_nthreads;
@@ -674,7 +677,7 @@ void* thread_master(void* cookie)
                        << "\"testaccess\": \"" << testaccess << "\", \t"
                        << "\"time\": \"" << std::setprecision(20) << runtime << "\", \t"
                        << "\"bandwidth\": \"" << testvol / runtime << "\", \t"
-                       << "\"rate\": \"" << runtime / testaccess<< "\", \t";
+                       << "\"rate\": \"" << runtime / testaccess<< "\" \t";
 
                 result << "}";
                 std::cout << result.str() << std::endl;
