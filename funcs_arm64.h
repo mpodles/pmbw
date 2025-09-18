@@ -365,7 +365,63 @@ void ScanRead64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
 
 REGISTER(ScanRead64PtrSimpleLoop, 8, 8, 1);
 
-void ScanRW64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
+void Scan1Read1Write64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
+{
+    uint64_t value = 0xC0FFEEEE;
+
+    asm volatile(
+        "mov    x2, %[value] \n"        // x2 = 64-bit value
+        "1: \n" // start of repeat loop
+        "mov    x0, %[memarea] \n"      // x0 = reset loop iterator
+        "mov    x3, %[memarea] \n"      // x3 = reset loop iterator
+        "2: \n" // start of read loop
+        "ldr    x1, [x0], #8 \n"        // value pointed by x0 into x1, move x0 by 8 bytes
+        "str    x2, [x3], #8 \n"     // store x2 value into what is pointed by x3, move x3 forward 8 bytes
+        // test read loop condition
+        "cmp    x0, %[end] \n"          // compare to end iterator
+        "blo    2b \n"
+
+        // test repeat loop condition
+        "subs   %[repeats], %[repeats], #1 \n" // until repeats = 0
+        "bne    1b \n"
+        : [repeats] "+r" (repeats)
+        : [value] "r" (value), [memarea] "r" (memarea), [end] "r" (memarea+size)
+        : "x0", "x1", "x2", "x3", "cc", "memory");
+}
+
+REGISTER(Scan1Read1Write64PtrSimpleLoop, 16, 8, 1);
+
+void ScanFullReadFullWrite64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
+{
+    uint64_t value = 0xC0FFEEEE;
+
+    asm volatile(
+        "mov    x2, %[value] \n"        // x2 = 64-bit value
+        "1: \n" // start of repeat loop
+        "mov    x0, %[memarea] \n"      // x0 = reset loop iterator
+        "mov    x3, %[memarea] \n"      // x3 = reset loop iterator
+        "2: \n" // start of read loop
+        "ldr    x1, [x0], #8 \n"        // value pointed by x0 into x1
+        // test read loop condition
+        "cmp    x0, %[end] \n"          // compare to end iterator
+        "blo    2b \n"
+
+        "3: \n" // start of write loop
+        "str    x2, [x3], #8 \n"     // store x2 value into what is pointed by x0, move x0 forward 8 bytes
+        // test write loop condition
+        "cmp    x3, %[end] \n"          // compare to end iterator
+        "blo    3b \n"
+        // test repeat loop condition
+        "subs   %[repeats], %[repeats], #1 \n" // until repeats = 0
+        "bne    1b \n"
+        : [repeats] "+r" (repeats)
+        : [value] "r" (value), [memarea] "r" (memarea), [end] "r" (memarea+size)
+        : "x0", "x1", "x2", "x3", "cc", "memory");
+}
+
+REGISTER(ScanFullReadFullWrite64PtrSimpleLoop, 16, 8, 1);
+
+void ScanHalfReadHalfWrite64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
 {
     uint64_t value = 0xC0FFEEEE;
     char* writing_array = memarea + size/2;
@@ -390,7 +446,7 @@ void ScanRW64PtrSimpleLoop(char* memarea, size_t size, size_t repeats)
         : "x0", "x1", "x2", "x3", "cc", "memory");
 }
 
-REGISTER(ScanRW64PtrSimpleLoop, 8, 8, 1);
+REGISTER(ScanHalfReadHalfWrite64PtrSimpleLoop, 8, 8, 1);
 
 // 64-bit reader in an unrolled loop (Assembler version)
 void ScanRead64PtrUnrollLoop(char* memarea, size_t size, size_t repeats)
